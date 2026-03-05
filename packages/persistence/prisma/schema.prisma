@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Booking {
+  id                String   @id @default(cuid())
+  supplier          String
+  supplierBookingId String
+  productCode       String
+  status            String
+  startTimeIso      DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([supplier, supplierBookingId])
+}
+
+model FlightLeg {
+  id               String   @id @default(cuid())
+  dateIso          DateTime
+  departureStation String
+  arrivalStation   String
+  departureTimeIso DateTime
+  aircraftId       String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Loadsheet {
+  id          String   @id @default(cuid())
+  flightLegId String
+  version     Int      @default(1)
+  payloadJson Json
+  createdAt   DateTime @default(now())
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  action     String
+  payload    Json
+  createdAt  DateTime @default(now())
+}

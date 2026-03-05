@@ -1,0 +1,22 @@
+{
+  "name": "flightops-next",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.2"
+  },
+  "scripts": {
+    "build": "npm run -ws build",
+    "typecheck": "npm run -ws typecheck",
+    "dev:mock": "npm run build -w @flightops/supplier-mock && npm run start -w @flightops/supplier-mock",
+    "dev:api": "npm run build -w @flightops/adapters && npm run build -w @flightops/ops-api && npm run start -w @flightops/ops-api",
+    "dev": "concurrently -k -n mock,api \"npm:dev:mock\" \"npm:dev:api\"",
+    "test:sync-smoke": "node ./scripts/sync-smoke.mjs"
+  }
+}
