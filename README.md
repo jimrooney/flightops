@@ -43,3 +43,35 @@ Start mock + API together:
 This builds the required packages, starts both services, calls sync, validates shape, and exits:
 
 - `npm run test:sync-smoke`
+
+## Cloudflare Worker + D1 (New)
+
+Worker app location:
+
+- `apps/cloudflare-worker`
+
+Provides:
+
+- `GET /healthz`
+- `GET /sync/rezdy/bookings?fromIso=...&toIso=...`
+- `GET /v1/bookings?minTourStartTime=...&maxTourStartTime=...`
+- `GET /v1/bookings/:orderNumber`
+- `POST /admin/seed` (seed demo bookings if table is empty)
+- `POST /admin/bookings` (create/upsert booking)
+- `PUT /admin/bookings/:orderNumber` (update booking)
+- `DELETE /admin/bookings/:orderNumber`
+
+Setup:
+
+1. Update `apps/cloudflare-worker/wrangler.toml`:
+   - `account_id`
+   - `database_id` under `[[d1_databases]]`
+2. Log in to Cloudflare:
+   - `npx wrangler login`
+3. Apply D1 schema:
+   - Local: `npm run cf:d1:migrate:local`
+   - Remote: `npm run cf:d1:migrate:remote`
+4. Start local worker:
+   - `npm run cf:dev`
+5. Seed bookings once:
+   - `curl -X POST http://127.0.0.1:8787/admin/seed`

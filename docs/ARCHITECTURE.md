@@ -8,6 +8,21 @@ FlightOpsNXG is a Node/TypeScript monorepo for flight-ops workflows with:
 - smoke-test script validating end-to-end sync
 
 ## Workspace Layout
+- `apps/cloudflare-worker`
+  - Cloudflare Worker API replacement for Node services
+  - D1-backed storage for bookings
+  - routes:
+    - `GET /healthz`
+    - `GET /sync/rezdy/bookings`
+    - `GET /v1/bookings`
+    - `GET /v1/bookings/:orderNumber`
+    - `POST /admin/seed`
+    - `POST /admin/bookings`
+    - `PUT /admin/bookings/:orderNumber`
+    - `DELETE /admin/bookings/:orderNumber`
+  - config and migrations:
+    - `apps/cloudflare-worker/wrangler.toml`
+    - `apps/cloudflare-worker/migrations/0001_init.sql`
 - `apps/ops-api`
   - HTTP API on port `4020`
   - routes: `GET /healthz`, `GET /sync/rezdy/bookings`, `GET /` and `GET /dashboard`

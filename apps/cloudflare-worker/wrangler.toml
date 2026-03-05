@@ -1,0 +1,18 @@
+name = "flightops-api"
+main = "src/index.ts"
+compatibility_date = "2026-03-05"
+workers_dev = false
+
+# Fill in with your Cloudflare account id before deploy.
+account_id = "ff40f63b9e12581003c51c95a221fcf3"
+
+[[d1_databases]]
+binding = "BOOKINGS_DB"
+database_name = "flightops-bookings"
+# Replace with your real D1 database id before remote deploy.
+database_id = "6e0385c9-7b74-43f6-bc8d-838e0f0a731e"
+migrations_dir = "migrations"
+
+[[routes]]
+pattern = "api.flightops.co.nz/*"
+zone_name = "flightops.co.nz"

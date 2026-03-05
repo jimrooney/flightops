@@ -1,6 +1,23 @@
 # Build Notes
 
 ## 2026-03-05
+### Cloudflare Worker + D1 Scaffold
+- Added `apps/cloudflare-worker` workspace with `wrangler.toml`, TypeScript worker entrypoint, and D1 migration.
+- Added Worker routes for health, sync, supplier-compatible booking reads, and admin CRUD/seed endpoints.
+- Added D1 schema migration `0001_init.sql` with indexed booking time column.
+- Added root scripts:
+  - `cf:dev`
+  - `cf:deploy`
+  - `cf:typecheck`
+  - `cf:d1:migrate:local`
+  - `cf:d1:migrate:remote`
+- Updated README with setup instructions for Cloudflare login, D1 migration, local dev, and seeding.
+- Created remote D1 database `flightops-bookings` and applied migration `0001_init.sql`.
+- Deployed Worker `flightops-api` to route `api.flightops.co.nz/*`.
+- Verified live endpoints using host-resolved checks:
+  - `GET /healthz` OK
+  - `POST /admin/seed` OK
+  - `GET /sync/rezdy/bookings` OK
 
 ### FlightOpsNXG Rebrand
 - Renamed repository workspace branding from `SkySeat` to `FlightOps`.

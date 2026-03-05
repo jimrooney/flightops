@@ -9,7 +9,8 @@
   "devDependencies": {
     "@types/node": "^22.13.10",
     "concurrently": "^9.1.2",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "wrangler": "^4.6.0"
   },
   "scripts": {
     "build": "npm run -ws build",
@@ -17,6 +18,11 @@
     "dev:mock": "npm run build -w @flightops/supplier-mock && npm run start -w @flightops/supplier-mock",
     "dev:api": "npm run build -w @flightops/adapters && npm run build -w @flightops/ops-api && npm run start -w @flightops/ops-api",
     "dev": "concurrently -k -n mock,api \"npm:dev:mock\" \"npm:dev:api\"",
-    "test:sync-smoke": "node ./scripts/sync-smoke.mjs"
+    "test:sync-smoke": "node ./scripts/sync-smoke.mjs",
+    "cf:dev": "npm run dev -w @flightops/cloudflare-worker",
+    "cf:deploy": "npm run deploy -w @flightops/cloudflare-worker",
+    "cf:typecheck": "npm run typecheck -w @flightops/cloudflare-worker",
+    "cf:d1:migrate:local": "npm run d1:migrate:local -w @flightops/cloudflare-worker",
+    "cf:d1:migrate:remote": "npm run d1:migrate:remote -w @flightops/cloudflare-worker"
   }
 }
