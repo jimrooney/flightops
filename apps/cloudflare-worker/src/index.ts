@@ -47,6 +47,7 @@ const dashboardHtml = `<!doctype html>
     input[type="date"], input[type="time"] { background: #fff; }
     button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; }
     .ghost { background: #ecf3ff; color: #11438d; }
+    .danger { background: #fee2e2; color: #991b1b; border: 1px solid #f5b7b7; }
     .toggle { display: flex; gap: 8px; align-items: center; font-weight: 600; }
     .mode-note { color: #4f6480; font-size: .88rem; }
     .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
@@ -89,6 +90,7 @@ const dashboardHtml = `<!doctype html>
       <button id="prevBtn" class="ghost" title="Previous day">&lt;</button>
       <button id="todayBtn" class="ghost">Today</button>
       <button id="nextBtn" class="ghost" title="Next day">&gt;</button>
+      <button id="resetSeedBtn" class="danger" title="Delete current bookings and reinsert default seed">Reset Seed</button>
       <button id="loadBtn">Load</button>
     </div>
     <div id="status">Ready.</div>
@@ -109,6 +111,7 @@ const toTimeEl = document.getElementById("toTime");
 const zuluToggleEl = document.getElementById("zuluToggle");
 const modeNoteEl = document.getElementById("modeNote");
 const loadBtn = document.getElementById("loadBtn");
+const resetSeedBtn = document.getElementById("resetSeedBtn");
 const todayBtn = document.getElementById("todayBtn");
 const prevBtn = document.getElementById("prevBtn");
 const nextBtn = document.getElementById("nextBtn");
@@ -207,6 +210,18 @@ function setModeNote() {
   modeNoteEl.textContent = zuluToggleEl.checked ? "Mode: Zulu / UTC" : "Mode: Local time (QT/browser timezone)";
 }
 
+async function resetSeed() {
+  const ok = confirm("Reset seeded bookings? This will delete all current bookings and reinsert the default fake dataset.");
+  if (!ok) return;
+  statusEl.textContent = "Resetting seed data...";
+  const res = await fetch("/admin/reset-seed", { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || "Failed to reset seed data");
+  }
+  statusEl.textContent = "Seed reset. Deleted " + (data.deleted || 0) + ", inserted " + (data.inserted || 0) + ".";
+}
+
 async function load() {
   const range = readRangeFromControls();
   if (!range) {
@@ -231,6 +246,11 @@ zuluToggleEl.addEventListener("change", () => {
 todayBtn.addEventListener("click", () => { setTodayRange(); load().catch((e) => statusEl.textContent = e.message || "Error"); });
 prevBtn.addEventListener("click", () => { shiftDay(-1); load().catch((e) => statusEl.textContent = e.message || "Error"); });
 nextBtn.addEventListener("click", () => { shiftDay(1); load().catch((e) => statusEl.textContent = e.message || "Error"); });
+resetSeedBtn.addEventListener("click", () => {
+  resetSeed()
+    .then(() => load())
+    .catch((e) => statusEl.textContent = e.message || "Error");
+});
 loadBtn.addEventListener("click", () => { load().catch((e) => statusEl.textContent = e.message || "Error"); });
 
 setModeNote();
@@ -245,7 +265,7 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "x-flightops-worker-version": "dashboard-v1"
+      "x-flightops-worker-version": "dashboard-v4"
     }
   });
 }
@@ -255,7 +275,7 @@ function html(body: string, status = 200): Response {
     status,
     headers: {
       "content-type": "text/html; charset=utf-8",
-      "x-flightops-worker-version": "dashboard-v1"
+      "x-flightops-worker-version": "dashboard-v4"
     }
   });
 }
@@ -364,6 +384,16 @@ async function seedIfEmpty(db: D1Database): Promise<number> {
   return seedBookings.length;
 }
 
+async function reseedAll(db: D1Database): Promise<{ deleted: number; inserted: number }> {
+  const deleteResult = await db.prepare("DELETE FROM bookings").run();
+  let inserted = 0;
+  for (const booking of seedBookings) {
+    await upsertBooking(db, booking);
+    inserted += 1;
+  }
+  return { deleted: Number(deleteResult.meta?.changes ?? 0), inserted };
+}
+
 function parseBookingBody(body: unknown): SeedBooking | null {
   if (!body || typeof body !== "object") return null;
   const booking = body as Partial<SeedBooking>;
@@ -389,6 +419,11 @@ export default {
     if (request.method === "POST" && url.pathname === "/admin/seed") {
       const inserted = await seedIfEmpty(env.BOOKINGS_DB);
       return json({ ok: true, inserted });
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/reset-seed") {
+      const result = await reseedAll(env.BOOKINGS_DB);
+      return json({ ok: true, deleted: result.deleted, inserted: result.inserted });
     }
 
     if (request.method === "GET" && url.pathname === "/sync/rezdy/bookings") {
@@ -442,3 +477,8 @@ export default {
     return json({ ok: false, error: "Route not found" }, 404);
   }
 };
+
+
+
+
+

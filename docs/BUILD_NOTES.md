@@ -1,5 +1,16 @@
 # Build Notes
 
+## 2026-03-06
+### Dashboard Seed Reset Safety
+- Added a `Reset Seed` button to the Cloudflare Worker dashboard.
+- Added browser confirmation dialog before reset to reduce accidental deletion.
+- Added `POST /admin/reset-seed` endpoint to wipe and reinsert default seeded bookings.
+- Verified live reset response includes deleted/inserted counts.
+
+### VS Code One-Click Dashboard
+- Added workspace `.vscode/tasks.json` task `CF Dev` for `npm run cf:dev`.
+- Added workspace `.vscode/launch.json` config `Dashboard (One Click)` to open Brave at `http://127.0.0.1:8787/dashboard` with prelaunch task.
+
 ## 2026-03-05
 ### Publish Completion Sound Timing
 - Updated `scripts/publish.ps1` so completion sound plays only after:

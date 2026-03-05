@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Dashboard (One Click)",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:8787/dashboard",
+      "runtimeExecutable": "C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe",
+      "preLaunchTask": "CF Dev"
+    }
+  ]
+}
