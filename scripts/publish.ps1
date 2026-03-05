@@ -26,6 +26,20 @@ if ($dirty) {
 
 $sound = "C:\Home\Jim\System\sounds\gotthis.wav"
 if (Test-Path $sound) {
-  $player = New-Object System.Media.SoundPlayer $sound
-  $player.PlaySync()
+  # Try delayed background playback first; fall back to local sync playback.
+  $played = $false
+  try {
+    $cmd = "Start-Sleep -Milliseconds 900; " +
+           "`$p = New-Object System.Media.SoundPlayer '$sound'; " +
+           "`$p.PlaySync()"
+    Start-Process -WindowStyle Hidden -FilePath "powershell.exe" -ArgumentList "-NoProfile", "-Command", $cmd | Out-Null
+    $played = $true
+  } catch {
+    $played = $false
+  }
+
+  if (-not $played) {
+    $player = New-Object System.Media.SoundPlayer $sound
+    $player.PlaySync()
+  }
 }
