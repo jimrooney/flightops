@@ -1,6 +1,12 @@
 # Build Notes
 
 ## 2026-03-06
+### VS Code Built-in Audio Cues
+- Added workspace `.vscode/settings.json` to enable built-in VS Code audio cues.
+- Enabled `audioCues.enabled`, `audioCues.taskCompleted`, and `audioCues.taskFailed`.
+- Enabled terminal and chat-related audio cue settings supported by this VS Code build.
+- Added `Completion Sound` section to `docs/AI_CONTEXT.md` with user troubleshooting steps via Settings -> `Audio Cues`.
+
 ### Dashboard Seed Reset Safety
 - Added a `Reset Seed` button to the Cloudflare Worker dashboard.
 - Added browser confirmation dialog before reset to reduce accidental deletion.

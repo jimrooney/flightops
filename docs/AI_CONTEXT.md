@@ -44,6 +44,16 @@ At completion checkpoints, play:
 
 - `C:\Home\Jim\System\sounds\gotthis.wav`
 
+## Completion Sound
+
+We rely on VS Code Audio Cues (built-in) for completion feedback.
+
+If completion sound does not play, open Settings and search for `Audio Cues`, then ensure these are enabled:
+
+- `audioCues.enabled` = `on`
+- `audioCues.taskCompleted` = `on`
+- `audioCues.taskFailed` = `on`
+
 ## Security
 
 - Never commit API secrets
