@@ -1,6 +1,20 @@
 # Build Notes
 
 ## 2026-03-05
+### Dashboard Time UX Improvements
+- Updated Worker dashboard (`/dashboard`) to use split date/time controls instead of raw ISO fields.
+- Added local-time default mode (QT/browser timezone) with optional Zulu/UTC toggle.
+- Added quick range controls:
+  - `Today`
+  - previous day `<`
+  - next day `>`
+- Updated dashboard rendering to display local timestamps when local mode is active.
+
+### Cloudflare Pages Frontend Migration
+- Added `site/index.html` as Cloudflare Pages static frontend entry.
+- Created Cloudflare Pages project `flightops` and deployed first static build.
+- Updated DNS target strategy to serve apex from `flightops.pages.dev` while keeping Worker API on `api.flightops.co.nz`.
+
 ### Cloudflare Worker + D1 Scaffold
 - Added `apps/cloudflare-worker` workspace with `wrangler.toml`, TypeScript worker entrypoint, and D1 migration.
 - Added Worker routes for health, sync, supplier-compatible booking reads, and admin CRUD/seed endpoints.

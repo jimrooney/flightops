@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FlightOps</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --ink: #10243f;
+      --muted: #4f6480;
+      --line: #d7e1ee;
+      --brand: #0f62fe;
+    }
+    body {
+      margin: 0;
+      font-family: Segoe UI, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 28px 16px 40px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+    }
+    h1 { margin: 0 0 8px; }
+    p { color: var(--muted); margin-top: 0; }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    a.btn {
+      text-decoration: none;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: #f8fbff;
+    }
+    a.btn.primary {
+      background: var(--brand);
+      color: #fff;
+      border-color: var(--brand);
+    }
+    code {
+      background: #eef4ff;
+      border: 1px solid #d6e4ff;
+      border-radius: 8px;
+      padding: 2px 6px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="card">
+      <h1>FlightOps</h1>
+      <p>Operations frontend hosted on Cloudflare Pages. API is served by Cloudflare Worker + D1.</p>
+      <div class="actions">
+        <a class="btn primary" href="https://api.flightops.co.nz/dashboard">Open Bookings Dashboard</a>
+        <a class="btn" href="https://api.flightops.co.nz/healthz">API Health</a>
+        <a class="btn" href="https://api.flightops.co.nz/sync/rezdy/bookings?fromIso=2026-02-28T00:00:00.000Z&toIso=2026-03-03T23:59:59.000Z">Sample Sync Query</a>
+      </div>
+      <p style="margin-top:16px">Primary API base: <code>https://api.flightops.co.nz</code></p>
+    </section>
+  </main>
+</body>
+</html>

@@ -29,10 +29,234 @@ type Env = {
   BOOKINGS_DB: D1Database;
 };
 
+const dashboardHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FlightOps Dashboard</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f4f7fb; color: #10243f; }
+    main { max-width: 1150px; margin: 0 auto; padding: 20px 14px 34px; }
+    .panel { background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; }
+    h1 { margin: 0 0 8px; font-size: 1.4rem; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin: 8px 0 12px; }
+    .stack { display: grid; gap: 6px; }
+    .split { display: flex; gap: 8px; }
+    input, button { height: 36px; border-radius: 8px; border: 1px solid #c8d5e7; padding: 0 10px; font: inherit; }
+    input[type="date"], input[type="time"] { background: #fff; }
+    button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; }
+    .ghost { background: #ecf3ff; color: #11438d; }
+    .toggle { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+    .mode-note { color: #4f6480; font-size: .88rem; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .kpi { border: 1px solid #d7e1ee; border-radius: 10px; background: #f8fbff; padding: 8px 10px; min-width: 110px; }
+    .label { color: #4f6480; font-size: .8rem; }
+    .value { font-size: 1.2rem; font-weight: 700; }
+    .table { margin-top: 12px; overflow: auto; background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; min-width: 820px; }
+    th, td { text-align: left; border-bottom: 1px solid #e8eef7; padding: 8px 10px; font-size: .9rem; }
+    th { background: #f5f9ff; }
+    .status { padding: 2px 8px; border-radius: 999px; font-size: .78rem; font-weight: 700; }
+    .confirmed { background: #dcfce7; color: #166534; }
+    .pending { background: #fef3c7; color: #92400e; }
+    .cancelled { background: #fee2e2; color: #991b1b; }
+  </style>
+</head>
+<body>
+<main>
+  <section class="panel">
+    <h1>FlightOps Bookings Dashboard</h1>
+    <div class="row">
+      <label class="toggle"><input id="zuluToggle" type="checkbox" /> Use Zulu / UTC</label>
+      <span class="mode-note" id="modeNote">Mode: Local time (QT/browser timezone)</span>
+    </div>
+    <div class="row">
+      <div class="stack">
+        <label>From</label>
+        <div class="split">
+          <input id="fromDate" type="date" />
+          <input id="fromTime" type="time" step="60" />
+        </div>
+      </div>
+      <div class="stack">
+        <label>To</label>
+        <div class="split">
+          <input id="toDate" type="date" />
+          <input id="toTime" type="time" step="60" />
+        </div>
+      </div>
+      <button id="prevBtn" class="ghost" title="Previous day">&lt;</button>
+      <button id="todayBtn" class="ghost">Today</button>
+      <button id="nextBtn" class="ghost" title="Next day">&gt;</button>
+      <button id="loadBtn">Load</button>
+    </div>
+    <div id="status">Ready.</div>
+    <div class="kpis" id="kpis"></div>
+  </section>
+  <section class="table">
+    <table>
+      <thead><tr><th>Booking</th><th>Status</th><th>Product</th><th>Start</th><th>Pax</th><th>Names</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </section>
+</main>
+<script>
+const fromDateEl = document.getElementById("fromDate");
+const fromTimeEl = document.getElementById("fromTime");
+const toDateEl = document.getElementById("toDate");
+const toTimeEl = document.getElementById("toTime");
+const zuluToggleEl = document.getElementById("zuluToggle");
+const modeNoteEl = document.getElementById("modeNote");
+const loadBtn = document.getElementById("loadBtn");
+const todayBtn = document.getElementById("todayBtn");
+const prevBtn = document.getElementById("prevBtn");
+const nextBtn = document.getElementById("nextBtn");
+const rowsEl = document.getElementById("rows");
+const statusEl = document.getElementById("status");
+const kpisEl = document.getElementById("kpis");
+
+function pad(n) { return String(n).padStart(2, "0"); }
+function statusClass(s) { return s === "confirmed" ? "confirmed" : (s === "cancelled" ? "cancelled" : "pending"); }
+
+function partsFromDate(d, isZulu) {
+  if (isZulu) {
+    return {
+      date: d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()),
+      time: pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes())
+    };
+  }
+  return {
+    date: d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()),
+    time: pad(d.getHours()) + ":" + pad(d.getMinutes())
+  };
+}
+
+function fromControlsToDate(dateStr, timeStr, isZulu) {
+  if (!dateStr || !timeStr) return null;
+  if (isZulu) return new Date(dateStr + "T" + timeStr + ":00.000Z");
+  return new Date(dateStr + "T" + timeStr + ":00");
+}
+
+function setControlsFromRange(start, end) {
+  const isZulu = zuluToggleEl.checked;
+  const a = partsFromDate(start, isZulu);
+  const b = partsFromDate(end, isZulu);
+  fromDateEl.value = a.date;
+  fromTimeEl.value = a.time;
+  toDateEl.value = b.date;
+  toTimeEl.value = b.time;
+}
+
+function readRangeFromControls() {
+  const isZulu = zuluToggleEl.checked;
+  const start = fromControlsToDate(fromDateEl.value, fromTimeEl.value, isZulu);
+  const end = fromControlsToDate(toDateEl.value, toTimeEl.value, isZulu);
+  if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return { start, end };
+}
+
+function setTodayRange() {
+  const now = new Date();
+  if (zuluToggleEl.checked) {
+    const y = now.getUTCFullYear();
+    const m = now.getUTCMonth();
+    const d = now.getUTCDate();
+    const start = new Date(Date.UTC(y, m, d, 0, 0, 0, 0));
+    const end = new Date(Date.UTC(y, m, d, 23, 59, 59, 999));
+    setControlsFromRange(start, end);
+  } else {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    setControlsFromRange(start, end);
+  }
+}
+
+function shiftDay(delta) {
+  const range = readRangeFromControls();
+  if (!range) return;
+  range.start.setDate(range.start.getDate() + delta);
+  range.end.setDate(range.end.getDate() + delta);
+  setControlsFromRange(range.start, range.end);
+}
+
+function formatDisplayTime(iso) {
+  const d = new Date(iso);
+  if (zuluToggleEl.checked) return d.toISOString();
+  return d.toLocaleString("en-NZ", { hour12: false }) + " local";
+}
+
+function render(bookings) {
+  let confirmed = 0, pending = 0, cancelled = 0, pax = 0;
+  rowsEl.innerHTML = bookings.map((b) => {
+    if (b.status === "confirmed") confirmed++;
+    else if (b.status === "cancelled") cancelled++;
+    else pending++;
+    pax += b.passengers.length;
+    const names = b.passengers.map((p) => p.firstName + " " + p.lastName).join(", ");
+    return "<tr><td>" + b.supplierBookingId + "</td><td><span class='status " + statusClass(b.status) + "'>" + b.status + "</span></td><td>" + b.productCode + "</td><td>" + formatDisplayTime(b.startTimeIso) + "</td><td>" + b.passengers.length + "</td><td>" + names + "</td></tr>";
+  }).join("");
+  kpisEl.innerHTML = [
+    ["Bookings", bookings.length], ["Passengers", pax], ["Confirmed", confirmed], ["Pending", pending], ["Cancelled", cancelled]
+  ].map((x) => "<div class='kpi'><div class='label'>" + x[0] + "</div><div class='value'>" + x[1] + "</div></div>").join("");
+}
+
+function setModeNote() {
+  modeNoteEl.textContent = zuluToggleEl.checked ? "Mode: Zulu / UTC" : "Mode: Local time (QT/browser timezone)";
+}
+
+async function load() {
+  const range = readRangeFromControls();
+  if (!range) {
+    statusEl.textContent = "Enter valid date/time range.";
+    return;
+  }
+  statusEl.textContent = "Loading...";
+  const fromIso = range.start.toISOString();
+  const toIso = range.end.toISOString();
+  const url = "/sync/rezdy/bookings?fromIso=" + encodeURIComponent(fromIso) + "&toIso=" + encodeURIComponent(toIso);
+  const res = await fetch(url);
+  const data = await res.json();
+  render(data.bookings || []);
+  statusEl.textContent = "Loaded " + (data.count || 0) + " bookings.";
+}
+
+zuluToggleEl.addEventListener("change", () => {
+  const oldRange = readRangeFromControls();
+  setModeNote();
+  if (oldRange) setControlsFromRange(oldRange.start, oldRange.end);
+});
+todayBtn.addEventListener("click", () => { setTodayRange(); load().catch((e) => statusEl.textContent = e.message || "Error"); });
+prevBtn.addEventListener("click", () => { shiftDay(-1); load().catch((e) => statusEl.textContent = e.message || "Error"); });
+nextBtn.addEventListener("click", () => { shiftDay(1); load().catch((e) => statusEl.textContent = e.message || "Error"); });
+loadBtn.addEventListener("click", () => { load().catch((e) => statusEl.textContent = e.message || "Error"); });
+
+setModeNote();
+setTodayRange();
+load().catch((e) => statusEl.textContent = e.message || "Error");
+</script>
+</body>
+</html>`;
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" }
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "x-flightops-worker-version": "dashboard-v1"
+    }
+  });
+}
+
+function html(body: string, status = 200): Response {
+  return new Response(body, {
+    status,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "x-flightops-worker-version": "dashboard-v1"
+    }
   });
 }
 
@@ -156,6 +380,10 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/healthz") {
       return json({ ok: true, service: "flightops-cloudflare-worker" });
+    }
+
+    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
+      return html(dashboardHtml);
     }
 
     if (request.method === "POST" && url.pathname === "/admin/seed") {
