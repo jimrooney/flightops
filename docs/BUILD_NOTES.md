@@ -7,6 +7,9 @@
   - final publish status is printed
   - console output is flushed
 - Added final publish status line with commit hash and clean/dirty tree check.
+- Added playback reliability fallback:
+  - tries delayed background playback first
+  - falls back to synchronous local playback if background launch fails
 
 ### Dashboard Time UX Improvements
 - Updated Worker dashboard (`/dashboard`) to use split date/time controls instead of raw ISO fields.
