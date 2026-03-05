@@ -15,6 +15,15 @@ if (-not $pending) {
 
 git push origin HEAD
 
+$head = (git rev-parse --short HEAD).Trim()
+$dirty = git status --porcelain
+if ($dirty) {
+  Write-Host "Publish completed, but working tree is not clean."
+} else {
+  Write-Host "Publish completed successfully at commit $head."
+}
+[Console]::Out.Flush()
+
 $sound = "C:\Home\Jim\System\sounds\gotthis.wav"
 if (Test-Path $sound) {
   $player = New-Object System.Media.SoundPlayer $sound

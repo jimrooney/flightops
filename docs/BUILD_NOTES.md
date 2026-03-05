@@ -1,6 +1,13 @@
 # Build Notes
 
 ## 2026-03-05
+### Publish Completion Sound Timing
+- Updated `scripts/publish.ps1` so completion sound plays only after:
+  - push completes
+  - final publish status is printed
+  - console output is flushed
+- Added final publish status line with commit hash and clean/dirty tree check.
+
 ### Dashboard Time UX Improvements
 - Updated Worker dashboard (`/dashboard`) to use split date/time controls instead of raw ISO fields.
 - Added local-time default mode (QT/browser timezone) with optional Zulu/UTC toggle.
