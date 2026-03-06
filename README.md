@@ -25,6 +25,7 @@ Default local URL is `http://localhost:4010`.
 
 - `GET /healthz`
 - `GET /sync/rezdy/bookings?fromIso=...&toIso=...`
+- `POST /webhooks/rezdy`
 
 Default URL is `http://localhost:4020`.
 

@@ -6,6 +6,12 @@ interface HealthResponse {
   service: string;
 }
 
+interface ParsedJsonBody {
+  ok: boolean;
+  body: unknown;
+  error?: string;
+}
+
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("content-type", "application/json; charset=utf-8");
@@ -33,6 +39,32 @@ function getRangeFromQuery(req: IncomingMessage): { fromIso: string; toIso: stri
 
 function bootstrap(): HealthResponse {
   return { ok: true, service: "ops-api" };
+}
+
+async function parseJsonBody(req: IncomingMessage): Promise<ParsedJsonBody> {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  const maxBytes = 1024 * 1024;
+
+  for await (const chunk of req) {
+    const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    totalBytes += buffer.length;
+    if (totalBytes > maxBytes) {
+      return { ok: false, body: null, error: "Payload too large" };
+    }
+    chunks.push(buffer);
+  }
+
+  const rawBody = Buffer.concat(chunks).toString("utf8").trim();
+  if (!rawBody) {
+    return { ok: false, body: null, error: "Missing JSON body" };
+  }
+
+  try {
+    return { ok: true, body: JSON.parse(rawBody) };
+  } catch {
+    return { ok: false, body: null, error: "Invalid JSON body" };
+  }
 }
 
 const dashboardHtml = `<!doctype html>
@@ -342,6 +374,35 @@ const server = createServer(async (req, res) => {
         error: err instanceof Error ? err.message : "Unknown sync error",
       });
     }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/webhooks/rezdy") {
+    const parsedBody = await parseJsonBody(req);
+    if (!parsedBody.ok) {
+      sendJson(res, 400, {
+        ok: false,
+        error: parsedBody.error,
+      });
+      return;
+    }
+
+    const webhookEvent = parsedBody.body;
+    const eventType =
+      typeof webhookEvent === "object" &&
+      webhookEvent !== null &&
+      "eventType" in webhookEvent &&
+      typeof webhookEvent.eventType === "string"
+        ? webhookEvent.eventType
+        : "unknown";
+
+    sendJson(res, 202, {
+      ok: true,
+      receivedAtIso: new Date().toISOString(),
+      source: "rezdy-webhook",
+      eventType,
+      message: "Webhook accepted",
+    });
     return;
   }
 

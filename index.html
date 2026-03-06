@@ -1,1 +1,122 @@
-Hello World.
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FlightOps Local Dashboard Launcher</title>
+  <style>
+    body {
+      font-family: Segoe UI, Arial, sans-serif;
+      margin: 0;
+      background: #f4f7fb;
+      color: #10243f;
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #d7e1ee;
+      border-radius: 12px;
+      padding: 16px;
+      max-width: 560px;
+    }
+    .muted { color: #4f6480; }
+    .cmd {
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #eef4ff;
+      border: 1px solid #d7e1ee;
+      font-family: Consolas, "Courier New", monospace;
+      display: inline-block;
+    }
+    button {
+      margin-top: 10px;
+      height: 36px;
+      border-radius: 8px;
+      border: 0;
+      padding: 0 12px;
+      background: #0f62fe;
+      color: #fff;
+      cursor: pointer;
+      font: inherit;
+    }
+    a { color: #0f62fe; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div id="status">Checking local dashboard server...</div>
+    <div class="muted" id="detail"></div>
+    <div id="cmdWrap" style="display:none;">
+      <div class="cmd" id="cmdText">npm run cf:dev</div>
+      <button id="copyCmdBtn" type="button">Copy Command</button>
+    </div>
+    <button id="retryBtn" type="button" style="display:none;">Retry Check</button>
+    <div style="margin-top:12px">
+      Direct link:
+      <a href="http://127.0.0.1:8787/dashboard">http://127.0.0.1:8787/dashboard</a>
+    </div>
+  </div>
+  <script>
+    const statusEl = document.getElementById("status");
+    const detailEl = document.getElementById("detail");
+    const retryBtn = document.getElementById("retryBtn");
+    const cmdWrapEl = document.getElementById("cmdWrap");
+    const cmdTextEl = document.getElementById("cmdText");
+    const copyCmdBtn = document.getElementById("copyCmdBtn");
+
+    async function serverIsUp() {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1800);
+      try {
+        await fetch("http://127.0.0.1:8787/healthz?ts=" + Date.now(), {
+          mode: "no-cors",
+          cache: "no-store",
+          signal: controller.signal
+        });
+        return true;
+      } catch {
+        return false;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    async function checkAndRoute() {
+      retryBtn.style.display = "none";
+      cmdWrapEl.style.display = "none";
+      statusEl.textContent = "Checking local dashboard server...";
+      detailEl.textContent = "";
+
+      const up = await serverIsUp();
+      if (up) {
+        statusEl.textContent = "Server detected. Opening dashboard...";
+        window.location.replace("http://127.0.0.1:8787/dashboard");
+        return;
+      }
+
+      statusEl.textContent = "Local dashboard server is not running.";
+      detailEl.textContent = "Start it in terminal with: npm run cf:dev";
+      cmdWrapEl.style.display = "block";
+      retryBtn.style.display = "inline-block";
+    }
+
+    copyCmdBtn.addEventListener("click", async () => {
+      const cmd = cmdTextEl.textContent || "npm run cf:dev";
+      try {
+        await navigator.clipboard.writeText(cmd);
+        copyCmdBtn.textContent = "Copied";
+        setTimeout(() => { copyCmdBtn.textContent = "Copy Command"; }, 1200);
+      } catch {
+        copyCmdBtn.textContent = "Copy failed";
+        setTimeout(() => { copyCmdBtn.textContent = "Copy Command"; }, 1200);
+      }
+    });
+
+    retryBtn.addEventListener("click", checkAndRoute);
+    checkAndRoute();
+  </script>
+</body>
+</html>

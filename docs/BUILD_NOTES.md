@@ -1,6 +1,11 @@
 # Build Notes
 
 ## 2026-03-06
+### Go Live Dashboard Launcher
+- Updated root `index.html` so VS Code `Go Live` checks whether `http://127.0.0.1:8787/healthz` is reachable.
+- Added conditional redirect to `http://127.0.0.1:8787/dashboard` only when local worker dev server is up.
+- Added server-down guidance with copyable startup command `npm run cf:dev` and retry button.
+
 ### VS Code Built-in Audio Cues
 - Added workspace `.vscode/settings.json` to enable built-in VS Code audio cues.
 - Enabled `audioCues.enabled`, `audioCues.taskCompleted`, and `audioCues.taskFailed`.
