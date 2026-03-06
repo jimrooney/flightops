@@ -820,11 +820,11 @@ const opsBoardHtml = `<!doctype html>
     .lane-label { position: absolute; left: 8px; top: 8px; font-size: .85rem; color: #4f6480; font-weight: 700; }
     .tick { position: absolute; top: 0; bottom: 0; border-left: 1px dashed #d7e1ee; }
     .tick-label { position: absolute; top: 2px; left: 2px; font-size: .72rem; color: #8aa0bc; }
-    .segment { position: absolute; border-radius: 6px; color: #fff; font-size: .76rem; line-height: 22px; height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; user-select: none; }
+    .segment { position: absolute; z-index: 2; border-radius: 6px; color: #fff; font-size: .76rem; line-height: 22px; height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; user-select: none; }
     .segment:active { cursor: grabbing; }
     .inbound { background: #0f62fe; top: 30px; }
     .outbound { background: #0369a1; top: 30px; }
-    .ground { position: absolute; top: 60px; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; padding: 0 6px; overflow: hidden; white-space: nowrap; }
+    .ground { position: absolute; z-index: 1; top: 34px; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; overflow: hidden; white-space: nowrap; }
     .drop-target { outline: 2px solid #60a5fa; outline-offset: -2px; }
   </style>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -919,6 +919,10 @@ function toPx(minute) {
   return clamp(minute, 0, model.totalMin) * (axisWidth() / model.totalMin);
 }
 
+function segmentWidthPx(durationMin, minWidthPx = 42) {
+  return Math.max(minWidthPx, toPx(durationMin) - toPx(0));
+}
+
 function addTick(lane, minute, label) {
   const t = document.createElement("div");
   t.className = "tick";
@@ -993,7 +997,7 @@ function addSegment(lane, booking, type, startMin, durationMin, topPx, text) {
   const seg = document.createElement("a");
   seg.className = type === "ground" ? "ground" : ("segment " + type);
   seg.style.left = toPx(startMin) + "px";
-  seg.style.width = Math.max(42, toPx(durationMin) - toPx(0)) + "px";
+  seg.style.width = segmentWidthPx(durationMin) + "px";
   if (type !== "ground") seg.style.top = topPx + "px";
   seg.textContent = text;
   seg.href = "/booking-edit?id=" + encodeURIComponent(booking.id);
@@ -1004,6 +1008,16 @@ function addSegment(lane, booking, type, startMin, durationMin, topPx, text) {
       e.dataTransfer.effectAllowed = "move";
     });
   }
+  lane.appendChild(seg);
+}
+
+function addGroundSegmentPx(lane, booking, leftPx, widthPx, text) {
+  const seg = document.createElement("a");
+  seg.className = "ground";
+  seg.style.left = leftPx + "px";
+  seg.style.width = Math.max(30, widthPx) + "px";
+  seg.textContent = text;
+  seg.href = "/booking-edit?id=" + encodeURIComponent(booking.id);
   lane.appendChild(seg);
 }
 
@@ -1019,8 +1033,15 @@ function renderBoard() {
     const lane = lanes[b.laneIndex % lanes.length];
     const startMin = minutesBetween(model.startMs, b.startMs);
     const outMin = startMin + gapMin;
+    const inLeftPx = toPx(startMin);
+    const inWidthPx = segmentWidthPx(inboundMin);
+    const outLeftPx = toPx(outMin);
+    const overlapPx = 14;
+    const groundLeftPx = inLeftPx + inWidthPx - overlapPx;
+    const groundRightPx = outLeftPx + overlapPx;
+    const groundWidthPx = groundRightPx - groundLeftPx;
     addSegment(lane, b, "inbound", startMin, inboundMin, 30, "IN " + b.productCode + " · " + b.id + " · " + b.pax + " pax");
-    addSegment(lane, b, "ground", startMin + inboundMin, groundMin, 60, "Ground activity");
+    addGroundSegmentPx(lane, b, groundLeftPx, groundWidthPx, "Ground activity");
     addSegment(lane, b, "outbound", outMin, outboundMin, 30, "OUT " + b.productCode + " · " + b.id);
   });
 }

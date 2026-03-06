@@ -15,12 +15,18 @@ if (-not $pending) {
 
 git push origin HEAD
 
+Write-Host "Deploying Cloudflare Worker..."
+npm run cf:deploy
+if ($LASTEXITCODE -ne 0) {
+  throw "Cloudflare Worker deploy failed."
+}
+
 $head = (git rev-parse --short HEAD).Trim()
 $dirty = git status --porcelain
 if ($dirty) {
-  Write-Host "Publish completed, but working tree is not clean."
+  Write-Host "Publish + Cloudflare Worker deploy completed, but working tree is not clean."
 } else {
-  Write-Host "Publish completed successfully at commit $head."
+  Write-Host "Publish + Cloudflare Worker deploy completed successfully at commit $head."
 }
 [Console]::Out.Flush()
 
