@@ -1,6 +1,17 @@
 # Build Notes
 
 ## 2026-03-06
+### Public Landing + Gentleman's Password Gate
+- Added public landing page at `/` as open site entry point.
+- Added password gate page at `/auth` for tool access.
+- Protected UI routes now require authentication cookie:
+  - `/dashboard`
+  - `/booking` (redirect target)
+  - `/booking-edit`
+  - `/ops-board`
+- Implemented simple password flow using `pizza` and cookie `fo_access=1` (30-day expiry).
+- Updated `/booking` to redirect into `/booking-edit` so add/edit is the primary booking detail interface.
+
 ### Booking Pages + Top Navigation Tabs
 - Added top tab-bar navigation to worker pages: Dashboard, Booking Detail, and Add/Edit Booking.
 - Dashboard booking IDs now link to a dedicated booking detail page.

@@ -29,6 +29,67 @@ type Env = {
   BOOKINGS_DB: D1Database;
 };
 
+const landingHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FlightOps</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f4f7fb; color: #10243f; }
+    main { max-width: 980px; margin: 0 auto; padding: 28px 16px 40px; }
+    .panel { background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 16px; }
+    h1 { margin: 0 0 10px; }
+    p { color: #4f6480; }
+    a.btn { display: inline-block; margin-top: 8px; text-decoration: none; border-radius: 8px; padding: 10px 14px; background: #0f62fe; color: #fff; font-weight: 700; }
+    .muted { margin-top: 10px; font-size: .9rem; color: #6b7f99; }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <h1>FlightOps</h1>
+      <p>Welcome to FlightOps. This public page is a placeholder for site info and graphics.</p>
+      <a class="btn" href="/dashboard">Go to Dashboard</a>
+      <div class="muted">Dashboard/tools require a password.</div>
+    </section>
+  </main>
+</body>
+</html>`;
+
+function authHtml(nextPath: string, failed = false): string {
+  const safeNext = nextPath || "/dashboard";
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FlightOps Access</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f4f7fb; color: #10243f; display: grid; place-items: center; min-height: 100vh; }
+    .card { width: min(460px, 92vw); background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 16px; }
+    h1 { margin: 0 0 8px; font-size: 1.2rem; }
+    p { color: #4f6480; margin: 0 0 10px; }
+    form { display: grid; gap: 10px; }
+    input, button { height: 38px; border-radius: 8px; border: 1px solid #c8d5e7; padding: 0 10px; font: inherit; }
+    button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; font-weight: 700; }
+    .error { color: #991b1b; background: #fee2e2; border: 1px solid #f5b7b7; border-radius: 8px; padding: 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>FlightOps Access</h1>
+    <p>Enter password to access dashboard tools.</p>
+    ${failed ? '<div class="error">Incorrect password.</div>' : ""}
+    <form method="post" action="/auth?next=${encodeURIComponent(safeNext)}">
+      <input type="password" name="password" placeholder="Password" required />
+      <button type="submit">Continue</button>
+    </form>
+  </div>
+</body>
+</html>`;
+}
+
 const dashboardHtml = `<!doctype html>
 <html lang="en">
 <head>
@@ -74,8 +135,8 @@ const dashboardHtml = `<!doctype html>
 <main>
   <nav class="tabs">
     <a class="tab active" href="/dashboard">Dashboard</a>
-    <a class="tab" href="/booking">Booking Detail</a>
     <a class="tab" href="/booking-edit">Add/Edit Booking</a>
+    <a class="tab" href="/ops-board">Ops Board</a>
   </nav>
   <section class="panel">
     <h1>FlightOps Bookings Dashboard</h1>
@@ -210,7 +271,7 @@ function render(bookings) {
     else pending++;
     pax += b.passengers.length;
     const names = b.passengers.map((p) => p.firstName + " " + p.lastName).join(", ");
-    const bookingLink = "/booking?id=" + encodeURIComponent(b.supplierBookingId);
+    const bookingLink = "/booking-edit?id=" + encodeURIComponent(b.supplierBookingId);
     return "<tr><td><a class='link-btn' href='" + bookingLink + "'>" + b.supplierBookingId + "</a></td><td><span class='status " + statusClass(b.status) + "'>" + b.status + "</span></td><td>" + b.productCode + "</td><td>" + formatDisplayTime(b.startTimeIso) + "</td><td>" + b.passengers.length + "</td><td>" + names + "</td></tr>";
   }).join("");
   kpisEl.innerHTML = [
@@ -293,6 +354,7 @@ const bookingHtml = `<!doctype html>
     <a class="tab" href="/dashboard">Dashboard</a>
     <a class="tab active" href="/booking">Booking Detail</a>
     <a class="tab" href="/booking-edit">Add/Edit Booking</a>
+    <a class="tab" href="/ops-board">Ops Board</a>
   </nav>
   <section class="panel">
     <h1>Booking Detail</h1>
@@ -362,75 +424,214 @@ const bookingEditHtml = `<!doctype html>
   <title>FlightOps Add/Edit Booking</title>
   <style>
     body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f4f7fb; color: #10243f; }
-    main { max-width: 1150px; margin: 0 auto; padding: 16px 14px 34px; }
+    main { max-width: 1200px; margin: 0 auto; padding: 16px 14px 34px; }
     .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
     .tab { text-decoration: none; border: 1px solid #c8d5e7; border-radius: 8px; padding: 8px 12px; color: #11438d; background: #ecf3ff; font-weight: 600; }
     .tab.active { background: #0f62fe; color: #fff; border-color: #0f62fe; }
     .panel { background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin: 8px 0 12px; }
-    input, button, textarea { border-radius: 8px; border: 1px solid #c8d5e7; font: inherit; }
-    input, button { height: 36px; padding: 0 10px; }
-    textarea { width: 100%; min-height: 380px; padding: 10px; font-family: Consolas, "Courier New", monospace; }
+    .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    label { font-size: .84rem; color: #4f6480; display: grid; gap: 5px; }
+    input, button, select, textarea { border-radius: 8px; border: 1px solid #c8d5e7; font: inherit; }
+    input, button, select { height: 36px; padding: 0 10px; }
+    textarea { width: 100%; min-height: 220px; padding: 10px; font-family: Consolas, "Courier New", monospace; }
     button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; }
     .ghost { background: #ecf3ff; color: #11438d; border: 1px solid #c8d5e7; }
     .danger { background: #fee2e2; color: #991b1b; border: 1px solid #f5b7b7; }
     #status { margin: 6px 0 10px; color: #4f6480; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border-bottom: 1px solid #e8eef7; padding: 6px; text-align: left; font-size: .9rem; }
+    th { background: #f5f9ff; }
+    td input, td select { width: 100%; }
+    .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; color: #4f6480; font-size: .9rem; }
   </style>
 </head>
 <body>
 <main>
   <nav class="tabs">
     <a class="tab" href="/dashboard">Dashboard</a>
-    <a class="tab" href="/booking">Booking Detail</a>
     <a class="tab active" href="/booking-edit">Add/Edit Booking</a>
+    <a class="tab" href="/ops-board">Ops Board</a>
   </nav>
   <section class="panel">
     <h1>Add / Edit / Delete Booking</h1>
+    <div class="grid">
+      <label>Booking ID<input id="bookingId" type="text" placeholder="e.g. RZ-NEW-100" /></label>
+      <label>Status
+        <select id="statusSelect">
+          <option>CONFIRMED</option>
+          <option>PENDING_SUPPLIER</option>
+          <option>CANCELLED</option>
+        </select>
+      </label>
+      <label>Supplier ID<input id="supplierId" type="text" value="flightops-mock" /></label>
+      <label>Product Code<input id="productCode" type="text" value="FLIGHT-001" /></label>
+      <label>Flight Start (Local/ISO)<input id="startTime" type="datetime-local" /></label>
+      <label>Pickup Location<input id="pickupLocation" type="text" placeholder="Queenstown CBD / self-drive / airport" /></label>
+      <label>Booking Contact Name<input id="contactName" type="text" placeholder="Agent or lead passenger" /></label>
+      <label>Booking Contact Email<input id="contactEmail" type="email" placeholder="name@example.com" /></label>
+      <label>Booking Contact Phone<input id="contactPhone" type="text" placeholder="+64 ..." /></label>
+    </div>
+
     <div class="row">
-      <label for="bookingId">Booking ID</label>
-      <input id="bookingId" type="text" placeholder="e.g. RZ-NEW-100" />
       <button id="newBtn" class="ghost">New Template</button>
       <button id="loadBtn" class="ghost">Load Existing</button>
       <button id="saveBtn">Save (Create/Update)</button>
       <button id="deleteBtn" class="danger">Delete</button>
+      <button id="showJsonBtn" class="ghost">Show JSON</button>
     </div>
+
+    <div class="summary" id="paxSummary"></div>
+    <table>
+      <thead><tr><th>First Name</th><th>Last Name</th><th>Type</th><th>Weight (kg)</th><th>Barcode</th><th></th></tr></thead>
+      <tbody id="paxRows"></tbody>
+    </table>
+    <div class="row"><button id="addPaxBtn" class="ghost">+ Add Passenger</button></div>
+
     <div id="status">Use New Template for a new booking, or Load Existing to edit one.</div>
-    <textarea id="payload" spellcheck="false"></textarea>
+    <textarea id="payload" spellcheck="false" style="display:none;"></textarea>
   </section>
 </main>
 <script>
 const bookingIdEl = document.getElementById("bookingId");
+const statusSelectEl = document.getElementById("statusSelect");
+const supplierIdEl = document.getElementById("supplierId");
+const productCodeEl = document.getElementById("productCode");
+const startTimeEl = document.getElementById("startTime");
+const pickupLocationEl = document.getElementById("pickupLocation");
+const contactNameEl = document.getElementById("contactName");
+const contactEmailEl = document.getElementById("contactEmail");
+const contactPhoneEl = document.getElementById("contactPhone");
 const payloadEl = document.getElementById("payload");
 const statusEl = document.getElementById("status");
+const paxRowsEl = document.getElementById("paxRows");
+const paxSummaryEl = document.getElementById("paxSummary");
 const newBtn = document.getElementById("newBtn");
 const loadBtn = document.getElementById("loadBtn");
 const saveBtn = document.getElementById("saveBtn");
 const deleteBtn = document.getElementById("deleteBtn");
+const addPaxBtn = document.getElementById("addPaxBtn");
+const showJsonBtn = document.getElementById("showJsonBtn");
 
 function currentId() { return bookingIdEl.value.trim(); }
+function toLocalDatetimeValue(isoLike) {
+  const d = new Date(isoLike || Date.now());
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "T" + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+function toIsoFromLocalInput(value) {
+  if (!value) return new Date().toISOString();
+  return new Date(value).toISOString();
+}
 
-function buildTemplate(id) {
-  const orderId = id || "RZ-NEW-100";
+function passengerRow(p = {}) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = "<td><input class='first' value='" + (p.firstName || "") + "' /></td>" +
+    "<td><input class='last' value='" + (p.lastName || "") + "' /></td>" +
+    "<td><select class='ptype'><option value='adult'>adult</option><option value='child'>child</option><option value='infant'>infant</option></select></td>" +
+    "<td><input class='weight' type='number' min='0' step='0.1' value='" + (p.weightKg || "") + "' /></td>" +
+    "<td><input class='barcode' value='" + (p.barcode || "") + "' /></td>" +
+    "<td><button type='button' class='danger del'>X</button></td>";
+  tr.querySelector(".ptype").value = p.passengerType || "adult";
+  tr.querySelector(".del").addEventListener("click", () => { tr.remove(); updateSummary(); });
+  ["input", "change"].forEach(evt => tr.addEventListener(evt, updateSummary));
+  return tr;
+}
+
+function readPassengers() {
+  return Array.from(paxRowsEl.querySelectorAll("tr")).map((tr, idx) => {
+    const firstName = tr.querySelector(".first").value.trim() || "Unknown";
+    const lastName = tr.querySelector(".last").value.trim() || "Unknown";
+    const passengerType = tr.querySelector(".ptype").value;
+    const weightKg = tr.querySelector(".weight").value.trim();
+    const barcode = tr.querySelector(".barcode").value.trim() || (currentId() || "RZ-NEW") + "-" + (idx + 1);
+    return { firstName, lastName, passengerType, weightKg, barcode };
+  });
+}
+
+function updateSummary() {
+  const pax = readPassengers();
+  let adults = 0, children = 0, infants = 0;
+  pax.forEach((p) => {
+    if (p.passengerType === "infant") infants++;
+    else if (p.passengerType === "child") children++;
+    else adults++;
+  });
+  paxSummaryEl.textContent = "Passengers: " + pax.length + " | adults: " + adults + " | children: " + children + " | infants: " + infants;
+}
+
+function setPassengers(rows) {
+  paxRowsEl.innerHTML = "";
+  rows.forEach((p) => paxRowsEl.appendChild(passengerRow(p)));
+  if (!rows.length) paxRowsEl.appendChild(passengerRow({ firstName: "Jane", lastName: "Doe", passengerType: "adult", weightKg: "82", barcode: (currentId() || "RZ-NEW-100") + "-1" }));
+  updateSummary();
+}
+
+function buildPayloadFromForm() {
+  const id = currentId() || "RZ-NEW-100";
+  const participants = readPassengers().map((p) => ({
+    fields: [
+      { label: "First Name", value: p.firstName },
+      { label: "Last Name", value: p.lastName },
+      { label: "Barcode", value: p.barcode },
+      { label: "Passenger Type", value: p.passengerType },
+      { label: "Weight Kg", value: p.weightKg || "" },
+      { label: "Pickup Location", value: pickupLocationEl.value.trim() },
+      { label: "Contact Name", value: contactNameEl.value.trim() },
+      { label: "Contact Email", value: contactEmailEl.value.trim() },
+      { label: "Contact Phone", value: contactPhoneEl.value.trim() }
+    ]
+  }));
+
   return {
-    orderNumber: orderId,
-    status: "CONFIRMED",
-    supplierId: "flightops-mock",
+    orderNumber: id,
+    status: statusSelectEl.value,
+    supplierId: supplierIdEl.value.trim() || "flightops-mock",
+    contact: {
+      name: contactNameEl.value.trim(),
+      email: contactEmailEl.value.trim(),
+      phone: contactPhoneEl.value.trim()
+    },
+    pickup: { location: pickupLocationEl.value.trim() },
     items: [
       {
-        productCode: "FLIGHT-001",
-        startTimeLocal: new Date().toISOString(),
-        participants: [
-          {
-            fields: [
-              { label: "First Name", value: "Jane" },
-              { label: "Last Name", value: "Doe" },
-              { label: "Barcode", value: orderId + "-1" }
-            ]
-          }
-        ]
+        productCode: productCodeEl.value.trim() || "FLIGHT-001",
+        startTimeLocal: toIsoFromLocalInput(startTimeEl.value),
+        participants
       }
     ]
   };
+}
+
+function parseField(fields, label) {
+  return fields.find((f) => f.label === label)?.value || "";
+}
+
+function fillFormFromPayload(payload) {
+  bookingIdEl.value = payload.orderNumber || "";
+  statusSelectEl.value = payload.status || "CONFIRMED";
+  supplierIdEl.value = payload.supplierId || "flightops-mock";
+  const item = (payload.items && payload.items[0]) || {};
+  productCodeEl.value = item.productCode || "FLIGHT-001";
+  startTimeEl.value = toLocalDatetimeValue(item.startTimeLocal);
+
+  const firstParticipant = item.participants && item.participants[0];
+  const firstFields = firstParticipant ? firstParticipant.fields : [];
+  pickupLocationEl.value = payload.pickup?.location || parseField(firstFields, "Pickup Location");
+  contactNameEl.value = payload.contact?.name || parseField(firstFields, "Contact Name");
+  contactEmailEl.value = payload.contact?.email || parseField(firstFields, "Contact Email");
+  contactPhoneEl.value = payload.contact?.phone || parseField(firstFields, "Contact Phone");
+
+  const pax = (item.participants || []).map((pt) => ({
+    firstName: parseField(pt.fields, "First Name"),
+    lastName: parseField(pt.fields, "Last Name"),
+    passengerType: parseField(pt.fields, "Passenger Type") || "adult",
+    weightKg: parseField(pt.fields, "Weight Kg"),
+    barcode: parseField(pt.fields, "Barcode")
+  }));
+  setPassengers(pax);
+  payloadEl.value = JSON.stringify(payload, null, 2);
 }
 
 function setFromQuery() {
@@ -439,8 +640,19 @@ function setFromQuery() {
   if (id) bookingIdEl.value = id;
 }
 
-function setPayload(obj) {
-  payloadEl.value = JSON.stringify(obj, null, 2);
+function newTemplate() {
+  const id = currentId() || "RZ-NEW-100";
+  if (!currentId()) bookingIdEl.value = id;
+  const payload = {
+    orderNumber: id,
+    status: "CONFIRMED",
+    supplierId: "flightops-mock",
+    contact: { name: "", email: "", phone: "" },
+    pickup: { location: "" },
+    items: [{ productCode: "FLIGHT-001", startTimeLocal: new Date().toISOString(), participants: [] }]
+  };
+  fillFormFromPayload(payload);
+  statusEl.textContent = "Template loaded. Enter booking details and save.";
 }
 
 async function loadExisting() {
@@ -456,7 +668,7 @@ async function loadExisting() {
     statusEl.textContent = data.error || "Booking not found.";
     return;
   }
-  setPayload(data.booking);
+  fillFormFromPayload(data.booking);
   statusEl.textContent = "Loaded booking " + id + ".";
 }
 
@@ -466,13 +678,7 @@ async function saveBooking() {
     statusEl.textContent = "Enter a booking ID before saving.";
     return;
   }
-  let payload;
-  try {
-    payload = JSON.parse(payloadEl.value);
-  } catch {
-    statusEl.textContent = "Payload is not valid JSON.";
-    return;
-  }
+  const payload = buildPayloadFromForm();
   payload.orderNumber = id;
   statusEl.textContent = "Saving " + id + "...";
   const res = await fetch("/admin/bookings/" + encodeURIComponent(id), {
@@ -485,7 +691,7 @@ async function saveBooking() {
     statusEl.textContent = data.error || "Failed to save booking.";
     return;
   }
-  setPayload(payload);
+  payloadEl.value = JSON.stringify(payload, null, 2);
   statusEl.textContent = "Saved booking " + id + ".";
 }
 
@@ -504,29 +710,301 @@ async function deleteBooking() {
     statusEl.textContent = data.error || "Failed to delete booking.";
     return;
   }
-  payloadEl.value = "";
   statusEl.textContent = "Deleted booking " + id + ".";
 }
 
-newBtn.addEventListener("click", () => {
-  const id = currentId() || "RZ-NEW-100";
-  if (!currentId()) bookingIdEl.value = id;
-  setPayload(buildTemplate(id));
-  statusEl.textContent = "Template loaded. Update fields and click Save.";
-});
+newBtn.addEventListener("click", newTemplate);
 loadBtn.addEventListener("click", () => loadExisting().catch((e) => statusEl.textContent = e.message || "Error"));
 saveBtn.addEventListener("click", () => saveBooking().catch((e) => statusEl.textContent = e.message || "Error"));
 deleteBtn.addEventListener("click", () => deleteBooking().catch((e) => statusEl.textContent = e.message || "Error"));
+addPaxBtn.addEventListener("click", () => { paxRowsEl.appendChild(passengerRow({})); updateSummary(); });
+showJsonBtn.addEventListener("click", () => {
+  payloadEl.style.display = payloadEl.style.display === "none" ? "block" : "none";
+  if (payloadEl.style.display === "block") payloadEl.value = JSON.stringify(buildPayloadFromForm(), null, 2);
+});
 
 setFromQuery();
 if (currentId()) {
-  loadExisting().catch(() => {
-    setPayload(buildTemplate(currentId()));
-    statusEl.textContent = "Booking not found. Template loaded for new booking with this ID.";
-  });
+  loadExisting().catch(() => newTemplate());
 } else {
-  setPayload(buildTemplate("RZ-NEW-100"));
+  newTemplate();
 }
+</script>
+</body>
+</html>`;
+
+const opsBoardHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FlightOps Ops Board</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f4f7fb; color: #10243f; }
+    main { max-width: 1220px; margin: 0 auto; padding: 16px 14px 34px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .tab { text-decoration: none; border: 1px solid #c8d5e7; border-radius: 8px; padding: 8px 12px; color: #11438d; background: #ecf3ff; font-weight: 600; }
+    .tab.active { background: #0f62fe; color: #fff; border-color: #0f62fe; }
+    .panel { background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin: 8px 0 12px; }
+    input, button, select { height: 36px; border-radius: 8px; border: 1px solid #c8d5e7; padding: 0 10px; font: inherit; }
+    button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; }
+    .ghost { background: #ecf3ff; color: #11438d; border: 1px solid #c8d5e7; }
+    #status { margin: 8px 0 12px; color: #4f6480; }
+    .legend { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; font-size: .85rem; color: #4f6480; }
+    .chip { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+    .board { overflow: auto; border: 1px solid #d7e1ee; border-radius: 10px; background: #fff; }
+    .lane { position: relative; border-bottom: 1px solid #e8eef7; min-width: 1300px; height: 96px; }
+    .lane:last-child { border-bottom: 0; }
+    .lane-label { position: absolute; left: 8px; top: 8px; font-size: .85rem; color: #4f6480; font-weight: 700; }
+    .tick { position: absolute; top: 0; bottom: 0; border-left: 1px dashed #d7e1ee; }
+    .tick-label { position: absolute; top: 2px; left: 2px; font-size: .72rem; color: #8aa0bc; }
+    .segment { position: absolute; border-radius: 6px; color: #fff; font-size: .76rem; line-height: 22px; height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; user-select: none; }
+    .segment:active { cursor: grabbing; }
+    .inbound { background: #0f62fe; top: 30px; }
+    .outbound { background: #0369a1; top: 30px; }
+    .ground { position: absolute; top: 60px; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; padding: 0 6px; overflow: hidden; white-space: nowrap; }
+    .drop-target { outline: 2px solid #60a5fa; outline-offset: -2px; }
+  </style>
+</head>
+<body>
+<main>
+  <nav class="tabs">
+    <a class="tab" href="/dashboard">Dashboard</a>
+    <a class="tab" href="/booking-edit">Add/Edit Booking</a>
+    <a class="tab active" href="/ops-board">Ops Board</a>
+  </nav>
+  <section class="panel">
+    <h1>Operations Timeline Board</h1>
+    <div class="row">
+      <label for="viewMode">View</label>
+      <select id="viewMode">
+        <option value="day">Day</option>
+        <option value="week">Week</option>
+        <option value="month">Month</option>
+      </select>
+      <button id="prevBtn" class="ghost">&lt;</button>
+      <input id="anchorInput" type="date" />
+      <button id="nextBtn" class="ghost">&gt;</button>
+      <button id="todayBtn" class="ghost">Today</button>
+      <button id="loadBtn">Load Board</button>
+    </div>
+    <div class="legend">
+      <span><span class="chip" style="background:#0f62fe"></span>Inbound scenic leg</span>
+      <span><span class="chip" style="background:#0369a1"></span>Outbound return leg</span>
+      <span><span class="chip" style="background:#fef3c7"></span>Ground activity window</span>
+      <span>Drag a blue leg to move booking across aircraft lanes and times</span>
+    </div>
+    <div id="status">Choose a view/day and load board.</div>
+    <div class="board" id="board"></div>
+  </section>
+</main>
+<script>
+const viewModeEl = document.getElementById("viewMode");
+const anchorInputEl = document.getElementById("anchorInput");
+const prevBtn = document.getElementById("prevBtn");
+const nextBtn = document.getElementById("nextBtn");
+const todayBtn = document.getElementById("todayBtn");
+const loadBtn = document.getElementById("loadBtn");
+const boardEl = document.getElementById("board");
+const statusEl = document.getElementById("status");
+
+const aircraft = ["C208 Alpha", "C208 Beta", "GA8", "BN2"];
+const inboundMin = 45;
+const groundMin = 135;
+const outboundMin = 45;
+const gapMin = 180;
+
+let model = { startMs: 0, endMs: 0, totalMin: 1440, bookings: [] };
+let currentDropLane = null;
+
+function pad(n) { return String(n).padStart(2, "0"); }
+function dateToYmd(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function minutesBetween(a, b) { return Math.floor((b - a) / 60000); }
+
+function parseAnchorDate() {
+  const value = anchorInputEl.value;
+  return value ? new Date(value + "T00:00:00") : new Date();
+}
+
+function getRange(anchor, mode) {
+  const start = new Date(anchor);
+  if (mode === "day") {
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    return { start, end, totalMin: 1440 };
+  }
+  if (mode === "week") {
+    const day = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - day);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start); end.setDate(end.getDate() + 7);
+    return { start, end, totalMin: 10080 };
+  }
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start); end.setMonth(end.getMonth() + 1);
+  return { start, end, totalMin: minutesBetween(start, end) };
+}
+
+function axisWidth() {
+  return 1300;
+}
+
+function toPx(minute) {
+  return clamp(minute, 0, model.totalMin) * (axisWidth() / model.totalMin);
+}
+
+function addTick(lane, minute, label) {
+  const t = document.createElement("div");
+  t.className = "tick";
+  t.style.left = toPx(minute) + "px";
+  if (label) {
+    const tl = document.createElement("div");
+    tl.className = "tick-label";
+    tl.textContent = label;
+    t.appendChild(tl);
+  }
+  lane.appendChild(t);
+}
+
+function buildTicks(lane) {
+  const mode = viewModeEl.value;
+  if (mode === "day") {
+    for (let h = 0; h <= 24; h++) addTick(lane, h * 60, h < 24 ? pad(h) + ":00" : "");
+    return;
+  }
+  if (mode === "week") {
+    const names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    for (let d = 0; d <= 7; d++) addTick(lane, d * 1440, d < 7 ? names[d] : "");
+    return;
+  }
+  const days = Math.round(model.totalMin / 1440);
+  for (let d = 0; d <= days; d++) {
+    const label = d < days && (d % 2 === 0) ? String(d + 1) : "";
+    addTick(lane, d * 1440, label);
+  }
+}
+
+function laneElement(name, laneIndex) {
+  const lane = document.createElement("div");
+  lane.className = "lane";
+  lane.dataset.laneIndex = String(laneIndex);
+  const label = document.createElement("div");
+  label.className = "lane-label";
+  label.textContent = name;
+  lane.appendChild(label);
+  buildTicks(lane);
+
+  lane.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    if (currentDropLane && currentDropLane !== lane) currentDropLane.classList.remove("drop-target");
+    currentDropLane = lane;
+    lane.classList.add("drop-target");
+  });
+
+  lane.addEventListener("dragleave", () => lane.classList.remove("drop-target"));
+
+  lane.addEventListener("drop", (e) => {
+    e.preventDefault();
+    lane.classList.remove("drop-target");
+    currentDropLane = null;
+    const bookingId = e.dataTransfer.getData("text/plain");
+    if (!bookingId) return;
+    const booking = model.bookings.find((b) => b.id === bookingId);
+    if (!booking) return;
+    const rect = lane.getBoundingClientRect();
+    const x = clamp(e.clientX - rect.left, 0, axisWidth());
+    const newMinuteOffset = Math.round((x / axisWidth()) * model.totalMin);
+    booking.laneIndex = Number(lane.dataset.laneIndex);
+    booking.startMs = model.startMs + newMinuteOffset * 60000;
+    statusEl.textContent = "Moved " + booking.id + " to " + aircraft[booking.laneIndex] + " at " + new Date(booking.startMs).toLocaleString("en-NZ", { hour12: false }) + ".";
+    renderBoard();
+  });
+
+  return lane;
+}
+
+function addSegment(lane, booking, type, startMin, durationMin, topPx, text) {
+  const seg = document.createElement("a");
+  seg.className = type === "ground" ? "ground" : ("segment " + type);
+  seg.style.left = toPx(startMin) + "px";
+  seg.style.width = Math.max(42, toPx(durationMin) - toPx(0)) + "px";
+  if (type !== "ground") seg.style.top = topPx + "px";
+  seg.textContent = text;
+  seg.href = "/booking-edit?id=" + encodeURIComponent(booking.id);
+  if (type !== "ground") {
+    seg.draggable = true;
+    seg.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/plain", booking.id);
+      e.dataTransfer.effectAllowed = "move";
+    });
+  }
+  lane.appendChild(seg);
+}
+
+function renderBoard() {
+  boardEl.innerHTML = "";
+  const lanes = aircraft.map((name, idx) => {
+    const lane = laneElement(name, idx);
+    boardEl.appendChild(lane);
+    return lane;
+  });
+
+  model.bookings.forEach((b) => {
+    const lane = lanes[b.laneIndex % lanes.length];
+    const startMin = minutesBetween(model.startMs, b.startMs);
+    const outMin = startMin + gapMin;
+    addSegment(lane, b, "inbound", startMin, inboundMin, 30, "IN " + b.productCode + " · " + b.id + " · " + b.pax + " pax");
+    addSegment(lane, b, "ground", startMin + inboundMin, groundMin, 60, "Ground activity");
+    addSegment(lane, b, "outbound", outMin, outboundMin, 30, "OUT " + b.productCode + " · " + b.id);
+  });
+}
+
+async function loadBoard() {
+  const anchor = parseAnchorDate();
+  const mode = viewModeEl.value;
+  const range = getRange(anchor, mode);
+  model.startMs = range.start.getTime();
+  model.endMs = range.end.getTime();
+  model.totalMin = range.totalMin;
+
+  statusEl.textContent = "Loading bookings...";
+  const url = "/sync/rezdy/bookings?fromIso=" + encodeURIComponent(new Date(model.startMs).toISOString()) + "&toIso=" + encodeURIComponent(new Date(model.endMs - 1000).toISOString());
+  const res = await fetch(url);
+  const data = await res.json();
+  const bookings = data.bookings || [];
+  model.bookings = bookings.map((b, i) => ({
+    id: b.supplierBookingId,
+    productCode: b.productCode,
+    pax: b.passengers.length,
+    startMs: new Date(b.startTimeIso).getTime(),
+    laneIndex: i % aircraft.length
+  }));
+  renderBoard();
+  statusEl.textContent = "Loaded " + model.bookings.length + " bookings in " + mode + " view. Drag blue legs to reschedule.";
+}
+
+function moveAnchor(delta) {
+  const d = parseAnchorDate();
+  const mode = viewModeEl.value;
+  if (mode === "day") d.setDate(d.getDate() + delta);
+  else if (mode === "week") d.setDate(d.getDate() + 7 * delta);
+  else d.setMonth(d.getMonth() + delta);
+  anchorInputEl.value = dateToYmd(d);
+}
+
+(function init() {
+  const now = new Date();
+  anchorInputEl.value = dateToYmd(now);
+  loadBtn.addEventListener("click", () => loadBoard().catch((e) => statusEl.textContent = e.message || "Error"));
+  todayBtn.addEventListener("click", () => { anchorInputEl.value = dateToYmd(new Date()); loadBoard().catch((e) => statusEl.textContent = e.message || "Error"); });
+  prevBtn.addEventListener("click", () => { moveAnchor(-1); loadBoard().catch((e) => statusEl.textContent = e.message || "Error"); });
+  nextBtn.addEventListener("click", () => { moveAnchor(1); loadBoard().catch((e) => statusEl.textContent = e.message || "Error"); });
+  viewModeEl.addEventListener("change", () => loadBoard().catch((e) => statusEl.textContent = e.message || "Error"));
+  loadBoard().catch((e) => statusEl.textContent = e.message || "Error");
+})();
 </script>
 </body>
 </html>`;
@@ -536,7 +1014,7 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "x-flightops-worker-version": "dashboard-v5"
+      "x-flightops-worker-version": "dashboard-v8"
     }
   });
 }
@@ -546,7 +1024,7 @@ function html(body: string, status = 200): Response {
     status,
     headers: {
       "content-type": "text/html; charset=utf-8",
-      "x-flightops-worker-version": "dashboard-v5"
+      "x-flightops-worker-version": "dashboard-v8"
     }
   });
 }
@@ -590,6 +1068,26 @@ function parsePathname(pathname: string): { base: string; id: string | null } {
   const segments = pathname.split("/").filter(Boolean);
   if (segments.length < 2) return { base: pathname, id: null };
   return { base: `/${segments[0]}/${segments[1]}`, id: segments[2] ?? null };
+}
+
+function readCookie(cookies: string | null, name: string): string | null {
+  if (!cookies) return null;
+  const parts = cookies.split(";").map((x) => x.trim());
+  for (const p of parts) {
+    const idx = p.indexOf("=");
+    if (idx < 0) continue;
+    if (p.slice(0, idx) === name) return p.slice(idx + 1);
+  }
+  return null;
+}
+
+function isUiAuthed(request: Request): boolean {
+  const token = readCookie(request.headers.get("cookie"), "fo_access");
+  return token === "1";
+}
+
+function requiresUiAuth(pathname: string): boolean {
+  return pathname === "/dashboard" || pathname === "/booking" || pathname === "/booking-edit" || pathname === "/ops-board";
 }
 
 async function listRowsByStartWindow(db: D1Database, minIso: string | null, maxIso: string | null): Promise<BookingRow[]> {
@@ -683,16 +1181,48 @@ export default {
       return json({ ok: true, service: "flightops-cloudflare-worker" });
     }
 
-    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
+    if (request.method === "GET" && url.pathname === "/") {
+      return html(landingHtml);
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth") {
+      const next = url.searchParams.get("next") ?? "/dashboard";
+      return html(authHtml(next, false));
+    }
+
+    if (request.method === "POST" && url.pathname === "/auth") {
+      const next = url.searchParams.get("next") ?? "/dashboard";
+      const form = await request.formData().catch(() => null);
+      const password = String(form?.get("password") ?? "");
+      if (password !== "pizza") {
+        return html(authHtml(next, true), 401);
+      }
+      const secure = url.protocol === "https:";
+      const cookie = `fo_access=1; Path=/; Max-Age=2592000; SameSite=Lax${secure ? "; Secure" : ""}`;
+      return new Response(null, { status: 302, headers: { location: next, "set-cookie": cookie } });
+    }
+
+    if (request.method === "GET" && requiresUiAuth(url.pathname) && !isUiAuthed(request)) {
+      const next = `${url.pathname}${url.search}`;
+      return new Response(null, { status: 302, headers: { location: `/auth?next=${encodeURIComponent(next)}` } });
+    }
+
+    if (request.method === "GET" && url.pathname === "/dashboard") {
       return html(dashboardHtml);
     }
 
     if (request.method === "GET" && url.pathname === "/booking") {
-      return html(bookingHtml);
+      const targetId = url.searchParams.get("id");
+      const location = targetId ? `/booking-edit?id=${encodeURIComponent(targetId)}` : "/booking-edit";
+      return new Response(null, { status: 302, headers: { location } });
     }
 
     if (request.method === "GET" && url.pathname === "/booking-edit") {
       return html(bookingEditHtml);
+    }
+
+    if (request.method === "GET" && url.pathname === "/ops-board") {
+      return html(opsBoardHtml);
     }
 
     if (request.method === "POST" && url.pathname === "/admin/seed") {
@@ -756,6 +1286,8 @@ export default {
     return json({ ok: false, error: "Route not found" }, 404);
   }
 };
+
+
 
 
 
