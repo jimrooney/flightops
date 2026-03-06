@@ -29,6 +29,18 @@ type Env = {
   BOOKINGS_DB: D1Database;
 };
 
+const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="sky2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1e6cff"/>
+      <stop offset="100%" stop-color="#1147b8"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#sky2)"/>
+  <circle cx="32" cy="32" r="19" fill="none" stroke="#9dc2ff" stroke-width="3"/>
+  <path d="M16 35.5l29-3.5 5-4-3 8-19 3 6 9-5 2-6-9-9 1.5z" fill="#ffffff"/>
+</svg>`;
+
 const landingHtml = `<!doctype html>
 <html lang="en">
 <head>
@@ -44,6 +56,7 @@ const landingHtml = `<!doctype html>
     a.btn { display: inline-block; margin-top: 8px; text-decoration: none; border-radius: 8px; padding: 10px 14px; background: #0f62fe; color: #fff; font-weight: 700; }
     .muted { margin-top: 10px; font-size: .9rem; color: #6b7f99; }
   </style>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
 <body>
   <main>
@@ -76,6 +89,7 @@ const configurationHtml = `<!doctype html>
     a.btn { text-decoration: none; padding: 10px 14px; border-radius: 10px; border: 1px solid #c8d5e7; color: #10243f; background: #f8fbff; }
     code { background: #eef4ff; border: 1px solid #d6e4ff; border-radius: 8px; padding: 2px 6px; }
   </style>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
 <body>
 <main>
@@ -116,6 +130,7 @@ function authHtml(nextPath: string, failed = false): string {
     button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; font-weight: 700; }
     .error { color: #991b1b; background: #fee2e2; border: 1px solid #f5b7b7; border-radius: 8px; padding: 8px; }
   </style>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
 <body>
   <div class="card">
@@ -171,6 +186,7 @@ const dashboardHtml = `<!doctype html>
     .cancelled { background: #fee2e2; color: #991b1b; }
     .link-btn { color: #11438d; text-decoration: none; font-weight: 700; }
   </style>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
 <body>
 <main>
@@ -389,6 +405,7 @@ const bookingHtml = `<!doctype html>
     #status { margin: 6px 0 10px; color: #4f6480; }
     pre { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px; overflow: auto; }
   </style>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
 <body>
 <main>
@@ -487,6 +504,7 @@ const bookingEditHtml = `<!doctype html>
     td input, td select { width: 100%; }
     .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; color: #4f6480; font-size: .9rem; }
   </style>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
 <body>
 <main>
@@ -809,6 +827,7 @@ const opsBoardHtml = `<!doctype html>
     .ground { position: absolute; top: 60px; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; padding: 0 6px; overflow: hidden; white-space: nowrap; }
     .drop-target { outline: 2px solid #60a5fa; outline-offset: -2px; }
   </style>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
 <body>
 <main>
@@ -1221,6 +1240,15 @@ export default {
     const url = new URL(request.url);
     const { base, id } = parsePathname(url.pathname);
 
+    if (request.method === "GET" && url.pathname === "/favicon.svg") {
+      return new Response(faviconSvg, {
+        headers: {
+          "content-type": "image/svg+xml; charset=utf-8",
+          "cache-control": "public, max-age=86400"
+        }
+      });
+    }
+
     if (request.method === "GET" && url.pathname === "/healthz") {
       return json({ ok: true, service: "flightops-cloudflare-worker" });
     }
@@ -1334,6 +1362,8 @@ export default {
     return json({ ok: false, error: "Route not found" }, 404);
   }
 };
+
+
 
 
 
