@@ -1,6 +1,13 @@
 # Build Notes
 
 ## 2026-03-06
+### Booking Pages + Top Navigation Tabs
+- Added top tab-bar navigation to worker pages: Dashboard, Booking Detail, and Add/Edit Booking.
+- Dashboard booking IDs now link to a dedicated booking detail page.
+- Added `/booking` page to load and view full booking JSON by booking ID.
+- Added `/booking-edit` page to create/update/delete bookings using existing admin endpoints.
+- Deployed worker update and verified page routes are live on `api.flightops.co.nz`.
+
 ### Go Live Dashboard Launcher
 - Updated root `index.html` so VS Code `Go Live` checks whether `http://127.0.0.1:8787/healthz` is reachable.
 - Added conditional redirect to `http://127.0.0.1:8787/dashboard` only when local worker dev server is up.

@@ -37,16 +37,21 @@ const dashboardHtml = `<!doctype html>
   <title>FlightOps Dashboard</title>
   <style>
     body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f4f7fb; color: #10243f; }
-    main { max-width: 1150px; margin: 0 auto; padding: 20px 14px 34px; }
+    main { max-width: 1150px; margin: 0 auto; padding: 16px 14px 34px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .tab { text-decoration: none; border: 1px solid #c8d5e7; border-radius: 8px; padding: 8px 12px; color: #11438d; background: #ecf3ff; font-weight: 600; }
+    .tab.active { background: #0f62fe; color: #fff; border-color: #0f62fe; }
     .panel { background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; }
     h1 { margin: 0 0 8px; font-size: 1.4rem; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin: 8px 0 12px; }
     .stack { display: grid; gap: 6px; }
     .split { display: flex; gap: 8px; }
-    input, button { height: 36px; border-radius: 8px; border: 1px solid #c8d5e7; padding: 0 10px; font: inherit; }
+    input, button, select, textarea { border-radius: 8px; border: 1px solid #c8d5e7; padding: 0 10px; font: inherit; }
+    input, button, select { height: 36px; }
+    textarea { min-height: 340px; padding: 10px; font-family: Consolas, "Courier New", monospace; }
     input[type="date"], input[type="time"] { background: #fff; }
     button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; }
-    .ghost { background: #ecf3ff; color: #11438d; }
+    .ghost { background: #ecf3ff; color: #11438d; border: 1px solid #c8d5e7; }
     .danger { background: #fee2e2; color: #991b1b; border: 1px solid #f5b7b7; }
     .toggle { display: flex; gap: 8px; align-items: center; font-weight: 600; }
     .mode-note { color: #4f6480; font-size: .88rem; }
@@ -62,10 +67,16 @@ const dashboardHtml = `<!doctype html>
     .confirmed { background: #dcfce7; color: #166534; }
     .pending { background: #fef3c7; color: #92400e; }
     .cancelled { background: #fee2e2; color: #991b1b; }
+    .link-btn { color: #11438d; text-decoration: none; font-weight: 700; }
   </style>
 </head>
 <body>
 <main>
+  <nav class="tabs">
+    <a class="tab active" href="/dashboard">Dashboard</a>
+    <a class="tab" href="/booking">Booking Detail</a>
+    <a class="tab" href="/booking-edit">Add/Edit Booking</a>
+  </nav>
   <section class="panel">
     <h1>FlightOps Bookings Dashboard</h1>
     <div class="row">
@@ -199,7 +210,8 @@ function render(bookings) {
     else pending++;
     pax += b.passengers.length;
     const names = b.passengers.map((p) => p.firstName + " " + p.lastName).join(", ");
-    return "<tr><td>" + b.supplierBookingId + "</td><td><span class='status " + statusClass(b.status) + "'>" + b.status + "</span></td><td>" + b.productCode + "</td><td>" + formatDisplayTime(b.startTimeIso) + "</td><td>" + b.passengers.length + "</td><td>" + names + "</td></tr>";
+    const bookingLink = "/booking?id=" + encodeURIComponent(b.supplierBookingId);
+    return "<tr><td><a class='link-btn' href='" + bookingLink + "'>" + b.supplierBookingId + "</a></td><td><span class='status " + statusClass(b.status) + "'>" + b.status + "</span></td><td>" + b.productCode + "</td><td>" + formatDisplayTime(b.startTimeIso) + "</td><td>" + b.passengers.length + "</td><td>" + names + "</td></tr>";
   }).join("");
   kpisEl.innerHTML = [
     ["Bookings", bookings.length], ["Passengers", pax], ["Confirmed", confirmed], ["Pending", pending], ["Cancelled", cancelled]
@@ -216,9 +228,7 @@ async function resetSeed() {
   statusEl.textContent = "Resetting seed data...";
   const res = await fetch("/admin/reset-seed", { method: "POST" });
   const data = await res.json();
-  if (!res.ok || !data.ok) {
-    throw new Error(data.error || "Failed to reset seed data");
-  }
+  if (!res.ok || !data.ok) throw new Error(data.error || "Failed to reset seed data");
   statusEl.textContent = "Seed reset. Deleted " + (data.deleted || 0) + ", inserted " + (data.inserted || 0) + ".";
 }
 
@@ -246,11 +256,7 @@ zuluToggleEl.addEventListener("change", () => {
 todayBtn.addEventListener("click", () => { setTodayRange(); load().catch((e) => statusEl.textContent = e.message || "Error"); });
 prevBtn.addEventListener("click", () => { shiftDay(-1); load().catch((e) => statusEl.textContent = e.message || "Error"); });
 nextBtn.addEventListener("click", () => { shiftDay(1); load().catch((e) => statusEl.textContent = e.message || "Error"); });
-resetSeedBtn.addEventListener("click", () => {
-  resetSeed()
-    .then(() => load())
-    .catch((e) => statusEl.textContent = e.message || "Error");
-});
+resetSeedBtn.addEventListener("click", () => { resetSeed().then(() => load()).catch((e) => statusEl.textContent = e.message || "Error"); });
 loadBtn.addEventListener("click", () => { load().catch((e) => statusEl.textContent = e.message || "Error"); });
 
 setModeNote();
@@ -260,12 +266,277 @@ load().catch((e) => statusEl.textContent = e.message || "Error");
 </body>
 </html>`;
 
+const bookingHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FlightOps Booking Detail</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f4f7fb; color: #10243f; }
+    main { max-width: 1150px; margin: 0 auto; padding: 16px 14px 34px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .tab { text-decoration: none; border: 1px solid #c8d5e7; border-radius: 8px; padding: 8px 12px; color: #11438d; background: #ecf3ff; font-weight: 600; }
+    .tab.active { background: #0f62fe; color: #fff; border-color: #0f62fe; }
+    .panel { background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin: 8px 0 12px; }
+    input, button { height: 36px; border-radius: 8px; border: 1px solid #c8d5e7; padding: 0 10px; font: inherit; }
+    button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; }
+    .ghost { background: #ecf3ff; color: #11438d; border: 1px solid #c8d5e7; }
+    #status { margin: 6px 0 10px; color: #4f6480; }
+    pre { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px; overflow: auto; }
+  </style>
+</head>
+<body>
+<main>
+  <nav class="tabs">
+    <a class="tab" href="/dashboard">Dashboard</a>
+    <a class="tab active" href="/booking">Booking Detail</a>
+    <a class="tab" href="/booking-edit">Add/Edit Booking</a>
+  </nav>
+  <section class="panel">
+    <h1>Booking Detail</h1>
+    <div class="row">
+      <label for="bookingId">Booking ID</label>
+      <input id="bookingId" type="text" placeholder="e.g. RZ-1001" />
+      <button id="loadBtn">Load Booking</button>
+      <button id="editBtn" class="ghost">Edit</button>
+    </div>
+    <div id="status">Enter a booking ID and click Load Booking.</div>
+    <pre id="payload">(no booking loaded)</pre>
+  </section>
+</main>
+<script>
+const bookingIdEl = document.getElementById("bookingId");
+const loadBtn = document.getElementById("loadBtn");
+const editBtn = document.getElementById("editBtn");
+const statusEl = document.getElementById("status");
+const payloadEl = document.getElementById("payload");
+
+function currentId() { return bookingIdEl.value.trim(); }
+function setFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get("id");
+  if (id) bookingIdEl.value = id;
+}
+
+async function loadBooking() {
+  const id = currentId();
+  if (!id) {
+    statusEl.textContent = "Enter a booking ID.";
+    return;
+  }
+  statusEl.textContent = "Loading " + id + "...";
+  const res = await fetch("/v1/bookings/" + encodeURIComponent(id));
+  const data = await res.json();
+  if (!res.ok || data.requestStatus !== "SUCCESS" || !data.booking) {
+    payloadEl.textContent = "(not found)";
+    statusEl.textContent = data.error || "Booking not found.";
+    return;
+  }
+  payloadEl.textContent = JSON.stringify(data.booking, null, 2);
+  statusEl.textContent = "Loaded booking " + id + ".";
+}
+
+loadBtn.addEventListener("click", () => loadBooking().catch((e) => statusEl.textContent = e.message || "Error"));
+editBtn.addEventListener("click", () => {
+  const id = currentId();
+  if (!id) {
+    statusEl.textContent = "Enter a booking ID first.";
+    return;
+  }
+  window.location.href = "/booking-edit?id=" + encodeURIComponent(id);
+});
+
+setFromQuery();
+if (currentId()) loadBooking().catch((e) => statusEl.textContent = e.message || "Error");
+</script>
+</body>
+</html>`;
+
+const bookingEditHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FlightOps Add/Edit Booking</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f4f7fb; color: #10243f; }
+    main { max-width: 1150px; margin: 0 auto; padding: 16px 14px 34px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .tab { text-decoration: none; border: 1px solid #c8d5e7; border-radius: 8px; padding: 8px 12px; color: #11438d; background: #ecf3ff; font-weight: 600; }
+    .tab.active { background: #0f62fe; color: #fff; border-color: #0f62fe; }
+    .panel { background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin: 8px 0 12px; }
+    input, button, textarea { border-radius: 8px; border: 1px solid #c8d5e7; font: inherit; }
+    input, button { height: 36px; padding: 0 10px; }
+    textarea { width: 100%; min-height: 380px; padding: 10px; font-family: Consolas, "Courier New", monospace; }
+    button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; }
+    .ghost { background: #ecf3ff; color: #11438d; border: 1px solid #c8d5e7; }
+    .danger { background: #fee2e2; color: #991b1b; border: 1px solid #f5b7b7; }
+    #status { margin: 6px 0 10px; color: #4f6480; }
+  </style>
+</head>
+<body>
+<main>
+  <nav class="tabs">
+    <a class="tab" href="/dashboard">Dashboard</a>
+    <a class="tab" href="/booking">Booking Detail</a>
+    <a class="tab active" href="/booking-edit">Add/Edit Booking</a>
+  </nav>
+  <section class="panel">
+    <h1>Add / Edit / Delete Booking</h1>
+    <div class="row">
+      <label for="bookingId">Booking ID</label>
+      <input id="bookingId" type="text" placeholder="e.g. RZ-NEW-100" />
+      <button id="newBtn" class="ghost">New Template</button>
+      <button id="loadBtn" class="ghost">Load Existing</button>
+      <button id="saveBtn">Save (Create/Update)</button>
+      <button id="deleteBtn" class="danger">Delete</button>
+    </div>
+    <div id="status">Use New Template for a new booking, or Load Existing to edit one.</div>
+    <textarea id="payload" spellcheck="false"></textarea>
+  </section>
+</main>
+<script>
+const bookingIdEl = document.getElementById("bookingId");
+const payloadEl = document.getElementById("payload");
+const statusEl = document.getElementById("status");
+const newBtn = document.getElementById("newBtn");
+const loadBtn = document.getElementById("loadBtn");
+const saveBtn = document.getElementById("saveBtn");
+const deleteBtn = document.getElementById("deleteBtn");
+
+function currentId() { return bookingIdEl.value.trim(); }
+
+function buildTemplate(id) {
+  const orderId = id || "RZ-NEW-100";
+  return {
+    orderNumber: orderId,
+    status: "CONFIRMED",
+    supplierId: "flightops-mock",
+    items: [
+      {
+        productCode: "FLIGHT-001",
+        startTimeLocal: new Date().toISOString(),
+        participants: [
+          {
+            fields: [
+              { label: "First Name", value: "Jane" },
+              { label: "Last Name", value: "Doe" },
+              { label: "Barcode", value: orderId + "-1" }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+}
+
+function setFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get("id");
+  if (id) bookingIdEl.value = id;
+}
+
+function setPayload(obj) {
+  payloadEl.value = JSON.stringify(obj, null, 2);
+}
+
+async function loadExisting() {
+  const id = currentId();
+  if (!id) {
+    statusEl.textContent = "Enter a booking ID to load.";
+    return;
+  }
+  statusEl.textContent = "Loading " + id + "...";
+  const res = await fetch("/v1/bookings/" + encodeURIComponent(id));
+  const data = await res.json();
+  if (!res.ok || data.requestStatus !== "SUCCESS" || !data.booking) {
+    statusEl.textContent = data.error || "Booking not found.";
+    return;
+  }
+  setPayload(data.booking);
+  statusEl.textContent = "Loaded booking " + id + ".";
+}
+
+async function saveBooking() {
+  const id = currentId();
+  if (!id) {
+    statusEl.textContent = "Enter a booking ID before saving.";
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(payloadEl.value);
+  } catch {
+    statusEl.textContent = "Payload is not valid JSON.";
+    return;
+  }
+  payload.orderNumber = id;
+  statusEl.textContent = "Saving " + id + "...";
+  const res = await fetch("/admin/bookings/" + encodeURIComponent(id), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    statusEl.textContent = data.error || "Failed to save booking.";
+    return;
+  }
+  setPayload(payload);
+  statusEl.textContent = "Saved booking " + id + ".";
+}
+
+async function deleteBooking() {
+  const id = currentId();
+  if (!id) {
+    statusEl.textContent = "Enter a booking ID before deleting.";
+    return;
+  }
+  const ok = confirm("Delete booking " + id + "? This cannot be undone.");
+  if (!ok) return;
+  statusEl.textContent = "Deleting " + id + "...";
+  const res = await fetch("/admin/bookings/" + encodeURIComponent(id), { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    statusEl.textContent = data.error || "Failed to delete booking.";
+    return;
+  }
+  payloadEl.value = "";
+  statusEl.textContent = "Deleted booking " + id + ".";
+}
+
+newBtn.addEventListener("click", () => {
+  const id = currentId() || "RZ-NEW-100";
+  if (!currentId()) bookingIdEl.value = id;
+  setPayload(buildTemplate(id));
+  statusEl.textContent = "Template loaded. Update fields and click Save.";
+});
+loadBtn.addEventListener("click", () => loadExisting().catch((e) => statusEl.textContent = e.message || "Error"));
+saveBtn.addEventListener("click", () => saveBooking().catch((e) => statusEl.textContent = e.message || "Error"));
+deleteBtn.addEventListener("click", () => deleteBooking().catch((e) => statusEl.textContent = e.message || "Error"));
+
+setFromQuery();
+if (currentId()) {
+  loadExisting().catch(() => {
+    setPayload(buildTemplate(currentId()));
+    statusEl.textContent = "Booking not found. Template loaded for new booking with this ID.";
+  });
+} else {
+  setPayload(buildTemplate("RZ-NEW-100"));
+}
+</script>
+</body>
+</html>`;
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "x-flightops-worker-version": "dashboard-v4"
+      "x-flightops-worker-version": "dashboard-v5"
     }
   });
 }
@@ -275,7 +546,7 @@ function html(body: string, status = 200): Response {
     status,
     headers: {
       "content-type": "text/html; charset=utf-8",
-      "x-flightops-worker-version": "dashboard-v4"
+      "x-flightops-worker-version": "dashboard-v5"
     }
   });
 }
@@ -414,6 +685,14 @@ export default {
 
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
       return html(dashboardHtml);
+    }
+
+    if (request.method === "GET" && url.pathname === "/booking") {
+      return html(bookingHtml);
+    }
+
+    if (request.method === "GET" && url.pathname === "/booking-edit") {
+      return html(bookingEditHtml);
     }
 
     if (request.method === "POST" && url.pathname === "/admin/seed") {
