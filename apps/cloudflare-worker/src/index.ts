@@ -186,6 +186,9 @@ const dashboardHtml = `<!doctype html>
     .pending { background: #fef3c7; color: #92400e; }
     .cancelled { background: #fee2e2; color: #991b1b; }
     .link-btn { color: #11438d; text-decoration: none; font-weight: 700; }
+    .jump-cell { width: 44px; text-align: center; }
+    .ops-link { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 999px; text-decoration: none; background: #ecf3ff; border: 1px solid #c8d5e7; color: #11438d; font-size: 1rem; }
+    .ops-link:hover { background: #dbe9ff; border-color: #a9c0e4; }
   </style>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
@@ -229,7 +232,7 @@ const dashboardHtml = `<!doctype html>
   </section>
   <section class="table">
     <table>
-      <thead><tr><th>Booking</th><th>Status</th><th>Product</th><th>Start</th><th>Pax</th><th>Names</th></tr></thead>
+      <thead><tr><th class="jump-cell" title="Open on Ops Board">Ops</th><th>Booking</th><th>Status</th><th>Product</th><th>Start</th><th>Pax</th><th>Names</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
   </section>
@@ -252,6 +255,11 @@ const kpisEl = document.getElementById("kpis");
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function statusClass(s) { return s === "confirmed" ? "confirmed" : (s === "cancelled" ? "cancelled" : "pending"); }
+function toYmdLocal(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
 
 function partsFromDate(d, isZulu) {
   if (isZulu) {
@@ -331,7 +339,9 @@ function render(bookings) {
     pax += b.passengers.length;
     const names = b.passengers.map((p) => p.firstName + " " + p.lastName).join(", ");
     const bookingLink = "/booking-edit?id=" + encodeURIComponent(b.supplierBookingId);
-    return "<tr><td><a class='link-btn' href='" + bookingLink + "'>" + b.supplierBookingId + "</a></td><td><span class='status " + statusClass(b.status) + "'>" + b.status + "</span></td><td>" + b.productCode + "</td><td>" + formatDisplayTime(b.startTimeIso) + "</td><td>" + b.passengers.length + "</td><td>" + names + "</td></tr>";
+    const boardDate = toYmdLocal(b.startTimeIso);
+    const opsLink = "/ops-board?view=day&date=" + encodeURIComponent(boardDate);
+    return "<tr><td class='jump-cell'><a class='ops-link' href='" + opsLink + "' title='Open Ops Board for " + boardDate + "' aria-label='Open Ops Board for " + boardDate + "'>&#9992;</a></td><td><a class='link-btn' href='" + bookingLink + "'>" + b.supplierBookingId + "</a></td><td><span class='status " + statusClass(b.status) + "'>" + b.status + "</span></td><td>" + b.productCode + "</td><td>" + formatDisplayTime(b.startTimeIso) + "</td><td>" + b.passengers.length + "</td><td>" + names + "</td></tr>";
   }).join("");
   kpisEl.innerHTML = [
     ["Bookings", bookings.length], ["Passengers", pax], ["Confirmed", confirmed], ["Pending", pending], ["Cancelled", cancelled]
@@ -504,6 +514,9 @@ const bookingEditHtml = `<!doctype html>
     th { background: #f5f9ff; }
     td input, td select { width: 100%; }
     .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; color: #4f6480; font-size: .9rem; }
+    .jump-cell { width: 44px; text-align: center; }
+    .ops-link { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 999px; text-decoration: none; background: #ecf3ff; border: 1px solid #c8d5e7; color: #11438d; font-size: 1rem; }
+    .ops-link:hover { background: #dbe9ff; border-color: #a9c0e4; }
   </style>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
@@ -545,7 +558,7 @@ const bookingEditHtml = `<!doctype html>
 
     <div class="summary" id="paxSummary"></div>
     <table>
-      <thead><tr><th>First Name</th><th>Last Name</th><th>Type</th><th>Weight (kg)</th><th>Barcode</th><th></th></tr></thead>
+      <thead><tr><th class="jump-cell" title="Open on Ops Board">Ops</th><th>First Name</th><th>Last Name</th><th>Type</th><th>Weight (kg)</th><th>Barcode</th><th></th></tr></thead>
       <tbody id="paxRows"></tbody>
     </table>
     <div class="row"><button id="addPaxBtn" class="ghost">+ Add Passenger</button></div>
@@ -587,9 +600,33 @@ function toIsoFromLocalInput(value) {
   return new Date(value).toISOString();
 }
 
+function bookingDayYmd() {
+  if (startTimeEl.value) {
+    return startTimeEl.value.slice(0, 10);
+  }
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+function opsBoardDayHref() {
+  return "/ops-board?view=day&date=" + encodeURIComponent(bookingDayYmd());
+}
+
+function refreshOpsLinks() {
+  const href = opsBoardDayHref();
+  const title = "Open Ops Board for " + bookingDayYmd();
+  Array.from(document.querySelectorAll(".ops-link")).forEach((el) => {
+    el.href = href;
+    el.title = title;
+    el.setAttribute("aria-label", title);
+  });
+}
+
 function passengerRow(p = {}) {
   const tr = document.createElement("tr");
-  tr.innerHTML = "<td><input class='first' value='" + (p.firstName || "") + "' /></td>" +
+  tr.innerHTML = "<td class='jump-cell'><a class='ops-link' href='#' title='Open Ops Board for booking day' aria-label='Open Ops Board for booking day'>&#9992;</a></td>" +
+    "<td><input class='first' value='" + (p.firstName || "") + "' /></td>" +
     "<td><input class='last' value='" + (p.lastName || "") + "' /></td>" +
     "<td><select class='ptype'><option value='adult'>adult</option><option value='child'>child</option><option value='infant'>infant</option></select></td>" +
     "<td><input class='weight' type='number' min='0' step='0.1' value='" + (p.weightKg || "") + "' /></td>" +
@@ -621,6 +658,7 @@ function updateSummary() {
     else adults++;
   });
   paxSummaryEl.textContent = "Passengers: " + pax.length + " | adults: " + adults + " | children: " + children + " | infants: " + infants;
+  refreshOpsLinks();
 }
 
 function setPassengers(rows) {
@@ -694,6 +732,7 @@ function fillFormFromPayload(payload) {
   }));
   setPassengers(pax);
   payloadEl.value = JSON.stringify(payload, null, 2);
+  refreshOpsLinks();
 }
 
 function setFromQuery() {
@@ -780,6 +819,7 @@ loadBtn.addEventListener("click", () => loadExisting().catch((e) => statusEl.tex
 saveBtn.addEventListener("click", () => saveBooking().catch((e) => statusEl.textContent = e.message || "Error"));
 deleteBtn.addEventListener("click", () => deleteBooking().catch((e) => statusEl.textContent = e.message || "Error"));
 addPaxBtn.addEventListener("click", () => { paxRowsEl.appendChild(passengerRow({})); updateSummary(); });
+["input", "change"].forEach((evt) => startTimeEl.addEventListener(evt, refreshOpsLinks));
 showJsonBtn.addEventListener("click", () => {
   payloadEl.style.display = payloadEl.style.display === "none" ? "block" : "none";
   if (payloadEl.style.display === "block") payloadEl.value = JSON.stringify(buildPayloadFromForm(), null, 2);
@@ -1271,8 +1311,14 @@ function moveAnchor(delta) {
 }
 
 (function init() {
+  const params = new URLSearchParams(window.location.search);
+  const viewFromQuery = params.get("view");
+  const dateFromQuery = params.get("date");
+  if (viewFromQuery === "day" || viewFromQuery === "week" || viewFromQuery === "month") {
+    viewModeEl.value = viewFromQuery;
+  }
   const now = new Date();
-  anchorInputEl.value = dateToYmd(now);
+  anchorInputEl.value = (dateFromQuery && /^\\d{4}-\\d{2}-\\d{2}$/.test(dateFromQuery)) ? dateFromQuery : dateToYmd(now);
   loadBtn.addEventListener("click", () => loadBoard().catch((e) => statusEl.textContent = e.message || "Error"));
   todayBtn.addEventListener("click", () => { anchorInputEl.value = dateToYmd(new Date()); loadBoard().catch((e) => statusEl.textContent = e.message || "Error"); });
   prevBtn.addEventListener("click", () => { moveAnchor(-1); loadBoard().catch((e) => statusEl.textContent = e.message || "Error"); });

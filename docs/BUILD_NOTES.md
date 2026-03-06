@@ -1,5 +1,12 @@
 # Build Notes
 
+## 2026-03-07
+### Ops Board Jump Links + Date Navigation Fix
+- Added per-row airplane jump icon on `/booking-edit` passenger rows linking to `/ops-board` day view for the booking date.
+- Added per-row airplane jump icon on `/dashboard` booking rows linking to `/ops-board` day view for that booking start date.
+- Added ops board query preselect support for `view` and `date` (`/ops-board?view=day&date=YYYY-MM-DD`) for deep links.
+- Fixed ops board date navigation so calendar input and `<` / `>` day buttons are no longer forced back to the initial query date after first load.
+
 ## 2026-03-06
 ### Ops Board Mobile Drag + LAN Dev Command
 - Reworked `/ops-board` booking leg drag to support touch devices using pointer events while preserving desktop drag/drop behavior.
