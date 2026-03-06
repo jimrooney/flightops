@@ -57,6 +57,47 @@ const landingHtml = `<!doctype html>
 </body>
 </html>`;
 
+const configurationHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FlightOps Configuration</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f4f7fb; color: #10243f; }
+    main { max-width: 980px; margin: 0 auto; padding: 16px 14px 34px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .tab { text-decoration: none; border: 1px solid #c8d5e7; border-radius: 8px; padding: 8px 12px; color: #11438d; background: #ecf3ff; font-weight: 600; }
+    .tab.active { background: #0f62fe; color: #fff; border-color: #0f62fe; }
+    .panel { background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 16px; }
+    h1 { margin: 0 0 10px; }
+    p { color: #4f6480; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    a.btn { text-decoration: none; padding: 10px 14px; border-radius: 10px; border: 1px solid #c8d5e7; color: #10243f; background: #f8fbff; }
+    code { background: #eef4ff; border: 1px solid #d6e4ff; border-radius: 8px; padding: 2px 6px; }
+  </style>
+</head>
+<body>
+<main>
+  <nav class="tabs">
+    <a class="tab" href="/dashboard">Dashboard</a>
+    <a class="tab" href="/booking-edit">Add/Edit Booking</a>
+    <a class="tab" href="/ops-board">Ops Board</a>
+    <a class="tab active" href="/configuration">Configuration</a>
+  </nav>
+  <section class="panel">
+    <h1>Configuration</h1>
+    <p>Operations frontend hosted on Cloudflare Pages. API is served by Cloudflare Worker + D1.</p>
+    <div class="actions">
+      <a class="btn" href="/healthz">API Health</a>
+      <a class="btn" href="/sync/rezdy/bookings?fromIso=2026-02-28T00:00:00.000Z&toIso=2026-03-03T23:59:59.000Z">Sample Sync Query</a>
+    </div>
+    <p style="margin-top:16px">Primary API base: <code>https://api.flightops.co.nz</code></p>
+  </section>
+</main>
+</body>
+</html>`;
+
 function authHtml(nextPath: string, failed = false): string {
   const safeNext = nextPath || "/dashboard";
   return `<!doctype html>
@@ -137,6 +178,7 @@ const dashboardHtml = `<!doctype html>
     <a class="tab active" href="/dashboard">Dashboard</a>
     <a class="tab" href="/booking-edit">Add/Edit Booking</a>
     <a class="tab" href="/ops-board">Ops Board</a>
+    <a class="tab" href="/configuration">Configuration</a>
   </nav>
   <section class="panel">
     <h1>FlightOps Bookings Dashboard</h1>
@@ -452,6 +494,7 @@ const bookingEditHtml = `<!doctype html>
     <a class="tab" href="/dashboard">Dashboard</a>
     <a class="tab active" href="/booking-edit">Add/Edit Booking</a>
     <a class="tab" href="/ops-board">Ops Board</a>
+    <a class="tab" href="/configuration">Configuration</a>
   </nav>
   <section class="panel">
     <h1>Add / Edit / Delete Booking</h1>
@@ -773,6 +816,7 @@ const opsBoardHtml = `<!doctype html>
     <a class="tab" href="/dashboard">Dashboard</a>
     <a class="tab" href="/booking-edit">Add/Edit Booking</a>
     <a class="tab active" href="/ops-board">Ops Board</a>
+    <a class="tab" href="/configuration">Configuration</a>
   </nav>
   <section class="panel">
     <h1>Operations Timeline Board</h1>
@@ -1014,7 +1058,7 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "x-flightops-worker-version": "dashboard-v8"
+      "x-flightops-worker-version": "dashboard-v9"
     }
   });
 }
@@ -1024,7 +1068,7 @@ function html(body: string, status = 200): Response {
     status,
     headers: {
       "content-type": "text/html; charset=utf-8",
-      "x-flightops-worker-version": "dashboard-v8"
+      "x-flightops-worker-version": "dashboard-v9"
     }
   });
 }
@@ -1087,7 +1131,7 @@ function isUiAuthed(request: Request): boolean {
 }
 
 function requiresUiAuth(pathname: string): boolean {
-  return pathname === "/dashboard" || pathname === "/booking" || pathname === "/booking-edit" || pathname === "/ops-board";
+  return pathname === "/dashboard" || pathname === "/booking" || pathname === "/booking-edit" || pathname === "/ops-board" || pathname === "/configuration";
 }
 
 async function listRowsByStartWindow(db: D1Database, minIso: string | null, maxIso: string | null): Promise<BookingRow[]> {
@@ -1223,6 +1267,10 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/ops-board") {
       return html(opsBoardHtml);
+    }
+
+    if (request.method === "GET" && url.pathname === "/configuration") {
+      return html(configurationHtml);
     }
 
     if (request.method === "POST" && url.pathname === "/admin/seed") {

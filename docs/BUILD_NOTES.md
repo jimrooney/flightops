@@ -1,6 +1,12 @@
 # Build Notes
 
 ## 2026-03-06
+### Configuration Tab + Front Door Landing
+- Moved API/config utility content off homepage and into API app under new `Configuration` tab/page (`/configuration`).
+- Added `Configuration` tab to dashboard, booking, and ops board navigation.
+- Kept `Open Bookings Dashboard` on the site homepage.
+- Simplified root `index.html` (local project front door) to just FlightOps title + dashboard button.
+
 ### Public Landing + Gentleman's Password Gate
 - Added public landing page at `/` as open site entry point.
 - Added password gate page at `/auth` for tool access.
