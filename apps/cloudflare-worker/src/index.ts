@@ -823,7 +823,7 @@ const opsBoardHtml = `<!doctype html>
     .segment { position: absolute; z-index: 2; border-radius: 6px; color: #fff; font-size: .76rem; line-height: 22px; height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; user-select: none; }
     .segment:active { cursor: grabbing; }
     .inbound { background: #0f62fe; top: 30px; }
-    .outbound { background: #0369a1; top: 30px; }
+    .outbound { background: #025783; top: 30px; }
     .ground { position: absolute; z-index: 1; top: 34px; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; overflow: hidden; white-space: nowrap; }
     .drop-target { outline: 2px solid #60a5fa; outline-offset: -2px; }
   </style>
@@ -1140,9 +1140,9 @@ function renderBoard() {
   model.bookings.forEach((b) => {
     const lane = lanes[b.laneIndex % lanes.length];
     const layout = getBookingLayout(b);
-    addSegment(lane, b, "inbound", layout.startMin, inboundMin, 30, "IN " + b.productCode + " · " + b.id + " · " + b.pax + " pax");
+    addSegment(lane, b, "inbound", layout.startMin, inboundMin, 30, b.productCode + " · " + b.id + " · " + b.pax + " pax");
     addGroundSegmentPx(lane, b, layout.groundLeftPx, layout.groundWidthPx, "Ground activity");
-    addSegment(lane, b, "outbound", layout.outMin, outboundMin, 30, "OUT " + b.productCode + " · " + b.id);
+    addSegment(lane, b, "outbound", layout.outMin, outboundMin, 30, b.productCode + " · " + b.id);
   });
 }
 
