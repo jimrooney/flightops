@@ -877,6 +877,8 @@ const inboundMin = 45;
 const groundMin = 135;
 const outboundMin = 45;
 const gapMin = 180;
+const snapMinutes = 30;
+const overlapPx = 14;
 
 let model = { startMs: 0, endMs: 0, totalMin: 1440, bookings: [] };
 let currentDropLane = null;
@@ -921,6 +923,69 @@ function toPx(minute) {
 
 function segmentWidthPx(durationMin, minWidthPx = 42) {
   return Math.max(minWidthPx, toPx(durationMin) - toPx(0));
+}
+
+function getBookingLayout(booking) {
+  const startMin = minutesBetween(model.startMs, booking.startMs);
+  const outMin = startMin + gapMin;
+  const inLeftPx = toPx(startMin);
+  const inWidthPx = segmentWidthPx(inboundMin);
+  const outLeftPx = toPx(outMin);
+  const groundLeftPx = inLeftPx + inWidthPx - overlapPx;
+  const groundRightPx = outLeftPx + overlapPx;
+  return {
+    startMin,
+    outMin,
+    inLeftPx,
+    inWidthPx,
+    outLeftPx,
+    groundLeftPx,
+    groundWidthPx: groundRightPx - groundLeftPx
+  };
+}
+
+function clampPx(px) {
+  return clamp(px, 0, axisWidth());
+}
+
+function parseOffsetMinutes(isoWithOffset) {
+  if (typeof isoWithOffset !== "string") return 0;
+  if (isoWithOffset.endsWith("Z")) return 0;
+  const m = isoWithOffset.match(/([+-])(\\d{2}):(\\d{2})$/);
+  if (!m) return 0;
+  const sign = m[1] === "-" ? -1 : 1;
+  return sign * (Number(m[2]) * 60 + Number(m[3]));
+}
+
+function toIsoWithOffset(ms, offsetMinutes) {
+  const shifted = new Date(ms + offsetMinutes * 60000);
+  const y = shifted.getUTCFullYear();
+  const mo = pad(shifted.getUTCMonth() + 1);
+  const d = pad(shifted.getUTCDate());
+  const h = pad(shifted.getUTCHours());
+  const mi = pad(shifted.getUTCMinutes());
+  const sign = offsetMinutes < 0 ? "-" : "+";
+  const abs = Math.abs(offsetMinutes);
+  const oh = pad(Math.floor(abs / 60));
+  const om = pad(abs % 60);
+  return y + "-" + mo + "-" + d + "T" + h + ":" + mi + ":00" + sign + oh + ":" + om;
+}
+
+function attachDragBehavior(seg, booking, segmentType, draggedLeftPx, anchorLeftPx) {
+  seg.draggable = true;
+  seg.addEventListener("dragstart", (e) => {
+    const rect = seg.getBoundingClientRect();
+    const rawGrabOffset = e.clientX - rect.left;
+    const payload = {
+      bookingId: booking.id,
+      segmentType,
+      grabOffsetPx: clamp(rawGrabOffset, 0, rect.width),
+      anchorToDraggedLeftPx: draggedLeftPx - anchorLeftPx
+    };
+    e.dataTransfer.setData("application/json", JSON.stringify(payload));
+    e.dataTransfer.setData("text/plain", booking.id);
+    e.dataTransfer.effectAllowed = "move";
+  });
 }
 
 function addTick(lane, minute, label) {
@@ -973,21 +1038,65 @@ function laneElement(name, laneIndex) {
 
   lane.addEventListener("dragleave", () => lane.classList.remove("drop-target"));
 
-  lane.addEventListener("drop", (e) => {
+  lane.addEventListener("drop", async (e) => {
     e.preventDefault();
     lane.classList.remove("drop-target");
     currentDropLane = null;
-    const bookingId = e.dataTransfer.getData("text/plain");
+    const rawPayload = e.dataTransfer.getData("application/json");
+    const fallbackBookingId = e.dataTransfer.getData("text/plain");
+    const dragPayload = rawPayload ? JSON.parse(rawPayload) : null;
+    const bookingId = dragPayload?.bookingId || fallbackBookingId;
     if (!bookingId) return;
     const booking = model.bookings.find((b) => b.id === bookingId);
     if (!booking) return;
     const rect = lane.getBoundingClientRect();
-    const x = clamp(e.clientX - rect.left, 0, axisWidth());
-    const newMinuteOffset = Math.round((x / axisWidth()) * model.totalMin);
-    booking.laneIndex = Number(lane.dataset.laneIndex);
-    booking.startMs = model.startMs + newMinuteOffset * 60000;
-    statusEl.textContent = "Moved " + booking.id + " to " + aircraft[booking.laneIndex] + " at " + new Date(booking.startMs).toLocaleString("en-NZ", { hour12: false }) + ".";
+    const grabOffsetPx = Number(dragPayload?.grabOffsetPx ?? 0);
+    const anchorToDraggedLeftPx = Number(dragPayload?.anchorToDraggedLeftPx ?? 0);
+    const droppedDraggedLeftPx = clampPx(e.clientX - rect.left - grabOffsetPx);
+    const droppedAnchorLeftPx = clampPx(droppedDraggedLeftPx - anchorToDraggedLeftPx);
+    const rawMinuteOffset = (droppedAnchorLeftPx / axisWidth()) * model.totalMin;
+    const snappedMinuteOffset = clamp(Math.round(rawMinuteOffset / snapMinutes) * snapMinutes, 0, model.totalMin);
+    const newStartMs = model.startMs + snappedMinuteOffset * 60000;
+    const newLaneIndex = Number(lane.dataset.laneIndex);
+
+    const oldStartMs = booking.startMs;
+    const oldLaneIndex = booking.laneIndex;
+    booking.startMs = newStartMs;
+    booking.laneIndex = newLaneIndex;
     renderBoard();
+
+    try {
+      statusEl.textContent = "Saving move for " + booking.id + "...";
+      const existingRes = await fetch("/v1/bookings/" + encodeURIComponent(booking.id));
+      const existingData = await existingRes.json();
+      if (!existingRes.ok || existingData.requestStatus !== "SUCCESS" || !existingData.booking) {
+        throw new Error("Failed to read booking for update.");
+      }
+      const fullBooking = existingData.booking;
+      if (!Array.isArray(fullBooking.items) || fullBooking.items.length === 0) {
+        throw new Error("Booking has no items to update.");
+      }
+      const oldStartLocal = String(fullBooking.items[0].startTimeLocal ?? "");
+      const offsetMinutes = parseOffsetMinutes(oldStartLocal);
+      fullBooking.items[0].startTimeLocal = toIsoWithOffset(newStartMs, offsetMinutes);
+
+      const saveRes = await fetch("/admin/bookings/" + encodeURIComponent(booking.id), {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(fullBooking)
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok || !saveData.ok) {
+        throw new Error(saveData.error || "Failed to persist booking update.");
+      }
+
+      statusEl.textContent = "Moved " + booking.id + " to " + aircraft[booking.laneIndex] + " at " + new Date(booking.startMs).toLocaleString("en-NZ", { hour12: false }) + " (snapped to 30 min).";
+    } catch (err) {
+      booking.startMs = oldStartMs;
+      booking.laneIndex = oldLaneIndex;
+      renderBoard();
+      statusEl.textContent = (err && err.message) ? err.message : "Failed to save move.";
+    }
   });
 
   return lane;
@@ -996,18 +1105,15 @@ function laneElement(name, laneIndex) {
 function addSegment(lane, booking, type, startMin, durationMin, topPx, text) {
   const seg = document.createElement("a");
   seg.className = type === "ground" ? "ground" : ("segment " + type);
-  seg.style.left = toPx(startMin) + "px";
+  const leftPx = toPx(startMin);
+  seg.style.left = leftPx + "px";
   seg.style.width = segmentWidthPx(durationMin) + "px";
   if (type !== "ground") seg.style.top = topPx + "px";
   seg.textContent = text;
   seg.href = "/booking-edit?id=" + encodeURIComponent(booking.id);
-  if (type !== "ground") {
-    seg.draggable = true;
-    seg.addEventListener("dragstart", (e) => {
-      e.dataTransfer.setData("text/plain", booking.id);
-      e.dataTransfer.effectAllowed = "move";
-    });
-  }
+  const layout = getBookingLayout(booking);
+  const anchorLeftPx = type === "outbound" ? layout.outLeftPx : layout.inLeftPx;
+  attachDragBehavior(seg, booking, type, leftPx, anchorLeftPx);
   lane.appendChild(seg);
 }
 
@@ -1018,6 +1124,8 @@ function addGroundSegmentPx(lane, booking, leftPx, widthPx, text) {
   seg.style.width = Math.max(30, widthPx) + "px";
   seg.textContent = text;
   seg.href = "/booking-edit?id=" + encodeURIComponent(booking.id);
+  const layout = getBookingLayout(booking);
+  attachDragBehavior(seg, booking, "ground", leftPx, layout.inLeftPx);
   lane.appendChild(seg);
 }
 
@@ -1031,18 +1139,10 @@ function renderBoard() {
 
   model.bookings.forEach((b) => {
     const lane = lanes[b.laneIndex % lanes.length];
-    const startMin = minutesBetween(model.startMs, b.startMs);
-    const outMin = startMin + gapMin;
-    const inLeftPx = toPx(startMin);
-    const inWidthPx = segmentWidthPx(inboundMin);
-    const outLeftPx = toPx(outMin);
-    const overlapPx = 14;
-    const groundLeftPx = inLeftPx + inWidthPx - overlapPx;
-    const groundRightPx = outLeftPx + overlapPx;
-    const groundWidthPx = groundRightPx - groundLeftPx;
-    addSegment(lane, b, "inbound", startMin, inboundMin, 30, "IN " + b.productCode + " · " + b.id + " · " + b.pax + " pax");
-    addGroundSegmentPx(lane, b, groundLeftPx, groundWidthPx, "Ground activity");
-    addSegment(lane, b, "outbound", outMin, outboundMin, 30, "OUT " + b.productCode + " · " + b.id);
+    const layout = getBookingLayout(b);
+    addSegment(lane, b, "inbound", layout.startMin, inboundMin, 30, "IN " + b.productCode + " · " + b.id + " · " + b.pax + " pax");
+    addGroundSegmentPx(lane, b, layout.groundLeftPx, layout.groundWidthPx, "Ground activity");
+    addSegment(lane, b, "outbound", layout.outMin, outboundMin, 30, "OUT " + b.productCode + " · " + b.id);
   });
 }
 
