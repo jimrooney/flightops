@@ -107,6 +107,7 @@ const configurationHtml = `<!doctype html>
       <a class="btn" href="/sync/rezdy/bookings?fromIso=2026-02-28T00:00:00.000Z&toIso=2026-03-03T23:59:59.000Z">Sample Sync Query</a>
     </div>
     <p style="margin-top:16px">Primary API base: <code>https://api.flightops.co.nz</code></p>
+    <p style="margin-top:8px">Local LAN dev command: <code>npm run dev -w @flightops/cloudflare-worker -- --ip 0.0.0.0 --port 8787</code></p>
   </section>
 </main>
 </body>
@@ -820,12 +821,13 @@ const opsBoardHtml = `<!doctype html>
     .lane-label { position: absolute; left: 8px; top: 8px; font-size: .85rem; color: #4f6480; font-weight: 700; }
     .tick { position: absolute; top: 0; bottom: 0; border-left: 1px dashed #d7e1ee; }
     .tick-label { position: absolute; top: 2px; left: 2px; font-size: .72rem; color: #8aa0bc; }
-    .segment { position: absolute; z-index: 2; border-radius: 6px; color: #fff; font-size: .76rem; line-height: 22px; height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; user-select: none; }
+    .segment { position: absolute; z-index: 2; border-radius: 6px; color: #fff; font-size: .76rem; line-height: 22px; height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; user-select: none; touch-action: none; }
     .segment:active { cursor: grabbing; }
     .inbound { background: #0f62fe; top: 30px; }
     .outbound { background: #025783; top: 30px; }
-    .ground { position: absolute; z-index: 1; top: 34px; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; overflow: hidden; white-space: nowrap; }
+    .ground { position: absolute; z-index: 1; top: 34px; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; overflow: hidden; white-space: nowrap; cursor: grab; user-select: none; touch-action: none; }
     .drop-target { outline: 2px solid #60a5fa; outline-offset: -2px; }
+    .dragging { opacity: .85; }
   </style>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
@@ -882,6 +884,8 @@ const overlapPx = 14;
 
 let model = { startMs: 0, endMs: 0, totalMin: 1440, bookings: [] };
 let currentDropLane = null;
+let pointerDrag = null;
+let suppressClickUntilMs = 0;
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function dateToYmd(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
@@ -971,6 +975,77 @@ function toIsoWithOffset(ms, offsetMinutes) {
   return y + "-" + mo + "-" + d + "T" + h + ":" + mi + ":00" + sign + oh + ":" + om;
 }
 
+function setDropLane(lane) {
+  if (currentDropLane && currentDropLane !== lane) currentDropLane.classList.remove("drop-target");
+  currentDropLane = lane || null;
+  if (currentDropLane) currentDropLane.classList.add("drop-target");
+}
+
+function clearDropLane() {
+  if (currentDropLane) currentDropLane.classList.remove("drop-target");
+  currentDropLane = null;
+}
+
+function laneFromPoint(clientX, clientY) {
+  const el = document.elementFromPoint(clientX, clientY);
+  return el ? el.closest(".lane") : null;
+}
+
+async function applyDropMove(lane, clientX, dragPayload, fallbackBookingId) {
+  const bookingId = dragPayload?.bookingId || fallbackBookingId;
+  if (!bookingId) return;
+  const booking = model.bookings.find((b) => b.id === bookingId);
+  if (!booking) return;
+  const rect = lane.getBoundingClientRect();
+  const grabOffsetPx = Number(dragPayload?.grabOffsetPx ?? 0);
+  const anchorToDraggedLeftPx = Number(dragPayload?.anchorToDraggedLeftPx ?? 0);
+  const droppedDraggedLeftPx = clampPx(clientX - rect.left - grabOffsetPx);
+  const droppedAnchorLeftPx = clampPx(droppedDraggedLeftPx - anchorToDraggedLeftPx);
+  const rawMinuteOffset = (droppedAnchorLeftPx / axisWidth()) * model.totalMin;
+  const snappedMinuteOffset = clamp(Math.round(rawMinuteOffset / snapMinutes) * snapMinutes, 0, model.totalMin);
+  const newStartMs = model.startMs + snappedMinuteOffset * 60000;
+  const newLaneIndex = Number(lane.dataset.laneIndex);
+
+  const oldStartMs = booking.startMs;
+  const oldLaneIndex = booking.laneIndex;
+  booking.startMs = newStartMs;
+  booking.laneIndex = newLaneIndex;
+  renderBoard();
+
+  try {
+    statusEl.textContent = "Saving move for " + booking.id + "...";
+    const existingRes = await fetch("/v1/bookings/" + encodeURIComponent(booking.id));
+    const existingData = await existingRes.json();
+    if (!existingRes.ok || existingData.requestStatus !== "SUCCESS" || !existingData.booking) {
+      throw new Error("Failed to read booking for update.");
+    }
+    const fullBooking = existingData.booking;
+    if (!Array.isArray(fullBooking.items) || fullBooking.items.length === 0) {
+      throw new Error("Booking has no items to update.");
+    }
+    const oldStartLocal = String(fullBooking.items[0].startTimeLocal ?? "");
+    const offsetMinutes = parseOffsetMinutes(oldStartLocal);
+    fullBooking.items[0].startTimeLocal = toIsoWithOffset(newStartMs, offsetMinutes);
+
+    const saveRes = await fetch("/admin/bookings/" + encodeURIComponent(booking.id), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(fullBooking)
+    });
+    const saveData = await saveRes.json();
+    if (!saveRes.ok || !saveData.ok) {
+      throw new Error(saveData.error || "Failed to persist booking update.");
+    }
+
+    statusEl.textContent = "Moved " + booking.id + " to " + aircraft[booking.laneIndex] + " at " + new Date(booking.startMs).toLocaleString("en-NZ", { hour12: false }) + " (snapped to 30 min).";
+  } catch (err) {
+    booking.startMs = oldStartMs;
+    booking.laneIndex = oldLaneIndex;
+    renderBoard();
+    statusEl.textContent = (err && err.message) ? err.message : "Failed to save move.";
+  }
+}
+
 function attachDragBehavior(seg, booking, segmentType, draggedLeftPx, anchorLeftPx) {
   seg.draggable = true;
   seg.addEventListener("dragstart", (e) => {
@@ -985,6 +1060,70 @@ function attachDragBehavior(seg, booking, segmentType, draggedLeftPx, anchorLeft
     e.dataTransfer.setData("application/json", JSON.stringify(payload));
     e.dataTransfer.setData("text/plain", booking.id);
     e.dataTransfer.effectAllowed = "move";
+  });
+
+  seg.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse") return;
+    if (!e.isPrimary) return;
+    const rect = seg.getBoundingClientRect();
+    pointerDrag = {
+      pointerId: e.pointerId,
+      bookingId: booking.id,
+      segmentType,
+      grabOffsetPx: clamp(e.clientX - rect.left, 0, rect.width),
+      anchorToDraggedLeftPx: draggedLeftPx - anchorLeftPx,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      seg
+    };
+    seg.setPointerCapture(e.pointerId);
+  });
+
+  seg.addEventListener("pointermove", (e) => {
+    if (!pointerDrag || pointerDrag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - pointerDrag.startX;
+    const dy = e.clientY - pointerDrag.startY;
+    if (!pointerDrag.moved && Math.hypot(dx, dy) < 6) return;
+    if (!pointerDrag.moved) {
+      pointerDrag.moved = true;
+      pointerDrag.seg.classList.add("dragging");
+    }
+    e.preventDefault();
+    setDropLane(laneFromPoint(e.clientX, e.clientY));
+  });
+
+  seg.addEventListener("pointerup", (e) => {
+    if (!pointerDrag || pointerDrag.pointerId !== e.pointerId) return;
+    const endedDrag = pointerDrag;
+    pointerDrag = null;
+    if (seg.hasPointerCapture(e.pointerId)) seg.releasePointerCapture(e.pointerId);
+    endedDrag.seg.classList.remove("dragging");
+    const lane = laneFromPoint(e.clientX, e.clientY);
+    clearDropLane();
+    if (!endedDrag.moved) return;
+    e.preventDefault();
+    suppressClickUntilMs = Date.now() + 400;
+    if (!lane) {
+      statusEl.textContent = "Drop booking over an aircraft lane to move it.";
+      return;
+    }
+    applyDropMove(lane, e.clientX, endedDrag, endedDrag.bookingId);
+  });
+
+  seg.addEventListener("pointercancel", (e) => {
+    if (!pointerDrag || pointerDrag.pointerId !== e.pointerId) return;
+    if (seg.hasPointerCapture(e.pointerId)) seg.releasePointerCapture(e.pointerId);
+    pointerDrag.seg.classList.remove("dragging");
+    pointerDrag = null;
+    clearDropLane();
+  });
+
+  seg.addEventListener("click", (e) => {
+    if (Date.now() < suppressClickUntilMs) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   });
 }
 
@@ -1031,72 +1170,23 @@ function laneElement(name, laneIndex) {
 
   lane.addEventListener("dragover", (e) => {
     e.preventDefault();
-    if (currentDropLane && currentDropLane !== lane) currentDropLane.classList.remove("drop-target");
-    currentDropLane = lane;
-    lane.classList.add("drop-target");
+    setDropLane(lane);
   });
 
-  lane.addEventListener("dragleave", () => lane.classList.remove("drop-target"));
+  lane.addEventListener("dragleave", () => {
+    if (currentDropLane === lane) clearDropLane();
+  });
 
   lane.addEventListener("drop", async (e) => {
     e.preventDefault();
-    lane.classList.remove("drop-target");
-    currentDropLane = null;
+    clearDropLane();
     const rawPayload = e.dataTransfer.getData("application/json");
     const fallbackBookingId = e.dataTransfer.getData("text/plain");
-    const dragPayload = rawPayload ? JSON.parse(rawPayload) : null;
-    const bookingId = dragPayload?.bookingId || fallbackBookingId;
-    if (!bookingId) return;
-    const booking = model.bookings.find((b) => b.id === bookingId);
-    if (!booking) return;
-    const rect = lane.getBoundingClientRect();
-    const grabOffsetPx = Number(dragPayload?.grabOffsetPx ?? 0);
-    const anchorToDraggedLeftPx = Number(dragPayload?.anchorToDraggedLeftPx ?? 0);
-    const droppedDraggedLeftPx = clampPx(e.clientX - rect.left - grabOffsetPx);
-    const droppedAnchorLeftPx = clampPx(droppedDraggedLeftPx - anchorToDraggedLeftPx);
-    const rawMinuteOffset = (droppedAnchorLeftPx / axisWidth()) * model.totalMin;
-    const snappedMinuteOffset = clamp(Math.round(rawMinuteOffset / snapMinutes) * snapMinutes, 0, model.totalMin);
-    const newStartMs = model.startMs + snappedMinuteOffset * 60000;
-    const newLaneIndex = Number(lane.dataset.laneIndex);
-
-    const oldStartMs = booking.startMs;
-    const oldLaneIndex = booking.laneIndex;
-    booking.startMs = newStartMs;
-    booking.laneIndex = newLaneIndex;
-    renderBoard();
-
-    try {
-      statusEl.textContent = "Saving move for " + booking.id + "...";
-      const existingRes = await fetch("/v1/bookings/" + encodeURIComponent(booking.id));
-      const existingData = await existingRes.json();
-      if (!existingRes.ok || existingData.requestStatus !== "SUCCESS" || !existingData.booking) {
-        throw new Error("Failed to read booking for update.");
-      }
-      const fullBooking = existingData.booking;
-      if (!Array.isArray(fullBooking.items) || fullBooking.items.length === 0) {
-        throw new Error("Booking has no items to update.");
-      }
-      const oldStartLocal = String(fullBooking.items[0].startTimeLocal ?? "");
-      const offsetMinutes = parseOffsetMinutes(oldStartLocal);
-      fullBooking.items[0].startTimeLocal = toIsoWithOffset(newStartMs, offsetMinutes);
-
-      const saveRes = await fetch("/admin/bookings/" + encodeURIComponent(booking.id), {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(fullBooking)
-      });
-      const saveData = await saveRes.json();
-      if (!saveRes.ok || !saveData.ok) {
-        throw new Error(saveData.error || "Failed to persist booking update.");
-      }
-
-      statusEl.textContent = "Moved " + booking.id + " to " + aircraft[booking.laneIndex] + " at " + new Date(booking.startMs).toLocaleString("en-NZ", { hour12: false }) + " (snapped to 30 min).";
-    } catch (err) {
-      booking.startMs = oldStartMs;
-      booking.laneIndex = oldLaneIndex;
-      renderBoard();
-      statusEl.textContent = (err && err.message) ? err.message : "Failed to save move.";
+    let dragPayload = null;
+    if (rawPayload) {
+      try { dragPayload = JSON.parse(rawPayload); } catch (_) { dragPayload = null; }
     }
+    await applyDropMove(lane, e.clientX, dragPayload, fallbackBookingId);
   });
 
   return lane;
@@ -1130,6 +1220,7 @@ function addGroundSegmentPx(lane, booking, leftPx, widthPx, text) {
 }
 
 function renderBoard() {
+  clearDropLane();
   boardEl.innerHTML = "";
   const lanes = aircraft.map((name, idx) => {
     const lane = laneElement(name, idx);

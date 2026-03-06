@@ -1,6 +1,12 @@
 # Build Notes
 
 ## 2026-03-06
+### Ops Board Mobile Drag + LAN Dev Command
+- Reworked `/ops-board` booking leg drag to support touch devices using pointer events while preserving desktop drag/drop behavior.
+- Unified drop/save handling for desktop and touch drag paths so booking move persistence stays consistent.
+- Added local LAN startup command to `/configuration`:
+  - `npm run dev -w @flightops/cloudflare-worker -- --ip 0.0.0.0 --port 8787`
+
 ### Configuration Tab + Front Door Landing
 - Moved API/config utility content off homepage and into API app under new `Configuration` tab/page (`/configuration`).
 - Added `Configuration` tab to dashboard, booking, and ops board navigation.
