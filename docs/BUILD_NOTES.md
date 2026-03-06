@@ -1,6 +1,19 @@
 # Build Notes
 
 ## 2026-03-07
+### Dashboard Range Modal + Configuration Move
+- Moved dashboard `Use Zulu / UTC` setting and seed reset action from `/dashboard` to `/configuration`.
+- Added persisted dashboard time-mode toggle on `/configuration` using local storage key `flightops_dashboard_use_zulu`.
+- Added `Reset Seed Data` action to `/configuration` with status feedback.
+- Reworked `/dashboard` controls:
+  - replaced visible from/to controls with a compact top row
+  - added day/week/month range dropdown
+  - added calendar icon button that opens a range modal
+  - moved From/To date-time inputs and `Load` action into the modal
+  - added modal close via outside-click, `Esc`, and top-right `X`
+- Updated `<`, `Today`, `>` behavior to operate within selected range mode (day/week/month).
+- Added conditional `UTC` badge on `/dashboard` (visible only in Zulu mode) linking to `/configuration`.
+
 ### Ops Board Jump Links + Date Navigation Fix
 - Added per-row airplane jump icon on `/booking-edit` passenger rows linking to `/ops-board` day view for the booking date.
 - Added per-row airplane jump icon on `/dashboard` booking rows linking to `/ops-board` day view for that booking start date.

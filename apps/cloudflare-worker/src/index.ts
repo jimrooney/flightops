@@ -87,6 +87,11 @@ const configurationHtml = `<!doctype html>
     p { color: #4f6480; }
     .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
     a.btn { text-decoration: none; padding: 10px 14px; border-radius: 10px; border: 1px solid #c8d5e7; color: #10243f; background: #f8fbff; }
+    .btn { text-decoration: none; padding: 10px 14px; border-radius: 10px; border: 1px solid #c8d5e7; color: #10243f; background: #f8fbff; cursor: pointer; font: inherit; }
+    .danger { background: #fee2e2; color: #991b1b; border: 1px solid #f5b7b7; }
+    .toggle { display: flex; gap: 8px; align-items: center; font-weight: 600; margin-top: 14px; }
+    input[type="checkbox"] { width: 18px; height: 18px; accent-color: #0f62fe; }
+    #status { margin-top: 10px; color: #4f6480; }
     code { background: #eef4ff; border: 1px solid #d6e4ff; border-radius: 8px; padding: 2px 6px; }
   </style>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -108,8 +113,45 @@ const configurationHtml = `<!doctype html>
     </div>
     <p style="margin-top:16px">Primary API base: <code>https://api.flightops.co.nz</code></p>
     <p style="margin-top:8px">Local LAN dev command: <code>npm run dev -w @flightops/cloudflare-worker -- --ip 0.0.0.0 --port 8787</code></p>
+    <label class="toggle"><input id="zuluToggleConfig" type="checkbox" /> Use Zulu / UTC on Dashboard</label>
+    <div class="actions">
+      <button id="resetSeedBtn" class="btn danger" title="Delete current bookings and reinsert default seed">Reset Seed Data</button>
+    </div>
+    <div id="status">Ready.</div>
   </section>
 </main>
+<script>
+const settingsKey = "flightops_dashboard_use_zulu";
+const zuluToggleConfigEl = document.getElementById("zuluToggleConfig");
+const resetSeedBtn = document.getElementById("resetSeedBtn");
+const statusEl = document.getElementById("status");
+
+function readZuluSetting() {
+  try { return localStorage.getItem(settingsKey) === "1"; } catch (_) { return false; }
+}
+function writeZuluSetting(value) {
+  try { localStorage.setItem(settingsKey, value ? "1" : "0"); } catch (_) {}
+}
+
+async function resetSeed() {
+  const ok = confirm("Reset seeded bookings? This will delete all current bookings and reinsert the default fake dataset.");
+  if (!ok) return;
+  statusEl.textContent = "Resetting seed data...";
+  const res = await fetch("/admin/reset-seed", { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.error || "Failed to reset seed data");
+  statusEl.textContent = "Seed reset. Deleted " + (data.deleted || 0) + ", inserted " + (data.inserted || 0) + ".";
+}
+
+zuluToggleConfigEl.checked = readZuluSetting();
+zuluToggleConfigEl.addEventListener("change", () => {
+  writeZuluSetting(zuluToggleConfigEl.checked);
+  statusEl.textContent = zuluToggleConfigEl.checked
+    ? "Dashboard time mode set to Zulu / UTC."
+    : "Dashboard time mode set to Local time (QT/browser timezone).";
+});
+resetSeedBtn.addEventListener("click", () => { resetSeed().catch((e) => statusEl.textContent = e.message || "Error"); });
+</script>
 </body>
 </html>`;
 
@@ -171,8 +213,13 @@ const dashboardHtml = `<!doctype html>
     button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; }
     .ghost { background: #ecf3ff; color: #11438d; border: 1px solid #c8d5e7; }
     .danger { background: #fee2e2; color: #991b1b; border: 1px solid #f5b7b7; }
-    .toggle { display: flex; gap: 8px; align-items: center; font-weight: 600; }
-    .mode-note { color: #4f6480; font-size: .88rem; }
+    .icon-btn { width: 38px; padding: 0; font-size: 1rem; }
+    .utc-badge { display: inline-flex; align-items: center; justify-content: center; height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid #a9c0e4; background: #ecf3ff; color: #11438d; font-size: .78rem; font-weight: 700; text-decoration: none; }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.35); display: none; align-items: center; justify-content: center; z-index: 2000; }
+    .modal-backdrop.open { display: flex; }
+    .modal-card { width: min(860px, 94vw); background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; position: relative; }
+    .modal-close { position: absolute; right: 10px; top: 10px; width: 32px; height: 32px; border-radius: 8px; background: #ecf3ff; color: #11438d; border: 1px solid #c8d5e7; cursor: pointer; }
+    .modal-title { margin: 0 32px 8px 0; font-size: 1.05rem; }
     .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
     .kpi { border: 1px solid #d7e1ee; border-radius: 10px; background: #f8fbff; padding: 8px 10px; min-width: 110px; }
     .label { color: #4f6480; font-size: .8rem; }
@@ -203,33 +250,46 @@ const dashboardHtml = `<!doctype html>
   <section class="panel">
     <h1>FlightOps Bookings Dashboard</h1>
     <div class="row">
-      <label class="toggle"><input id="zuluToggle" type="checkbox" /> Use Zulu / UTC</label>
-      <span class="mode-note" id="modeNote">Mode: Local time (QT/browser timezone)</span>
-    </div>
-    <div class="row">
-      <div class="stack">
-        <label>From</label>
-        <div class="split">
-          <input id="fromDate" type="date" />
-          <input id="fromTime" type="time" step="60" />
-        </div>
-      </div>
-      <div class="stack">
-        <label>To</label>
-        <div class="split">
-          <input id="toDate" type="date" />
-          <input id="toTime" type="time" step="60" />
-        </div>
-      </div>
-      <button id="prevBtn" class="ghost" title="Previous day">&lt;</button>
+      <button id="calendarBtn" class="ghost icon-btn" title="Open date/time range">&#128197;</button>
+      <label class="stack">
+        <span>Range</span>
+        <select id="rangeMode">
+          <option value="day">Day</option>
+          <option value="week">Week</option>
+          <option value="month">Month</option>
+        </select>
+      </label>
+      <a id="utcBadge" class="utc-badge" href="/configuration" title="Zulu / UTC mode is on. Open Configuration to change.">UTC</a>
+      <button id="prevBtn" class="ghost" title="Previous period">&lt;</button>
       <button id="todayBtn" class="ghost">Today</button>
-      <button id="nextBtn" class="ghost" title="Next day">&gt;</button>
-      <button id="resetSeedBtn" class="danger" title="Delete current bookings and reinsert default seed">Reset Seed</button>
-      <button id="loadBtn">Load</button>
+      <button id="nextBtn" class="ghost" title="Next period">&gt;</button>
     </div>
     <div id="status">Ready.</div>
     <div class="kpis" id="kpis"></div>
   </section>
+  <div id="rangeModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Date and time range">
+      <button id="closeModalBtn" class="modal-close" aria-label="Close">X</button>
+      <h2 class="modal-title">Date and Time Range</h2>
+      <div class="row">
+        <div class="stack">
+          <label>From</label>
+          <div class="split">
+            <input id="fromDate" type="date" />
+            <input id="fromTime" type="time" step="60" />
+          </div>
+        </div>
+        <div class="stack">
+          <label>To</label>
+          <div class="split">
+            <input id="toDate" type="date" />
+            <input id="toTime" type="time" step="60" />
+          </div>
+        </div>
+        <button id="loadBtn">Load</button>
+      </div>
+    </div>
+  </div>
   <section class="table">
     <table>
       <thead><tr><th class="jump-cell" title="Open on Ops Board">Ops</th><th>Booking</th><th>Status</th><th>Product</th><th>Start</th><th>Pax</th><th>Names</th></tr></thead>
@@ -242,16 +302,23 @@ const fromDateEl = document.getElementById("fromDate");
 const fromTimeEl = document.getElementById("fromTime");
 const toDateEl = document.getElementById("toDate");
 const toTimeEl = document.getElementById("toTime");
-const zuluToggleEl = document.getElementById("zuluToggle");
-const modeNoteEl = document.getElementById("modeNote");
+const calendarBtn = document.getElementById("calendarBtn");
+const rangeModeEl = document.getElementById("rangeMode");
+const rangeModalEl = document.getElementById("rangeModal");
+const closeModalBtn = document.getElementById("closeModalBtn");
 const loadBtn = document.getElementById("loadBtn");
-const resetSeedBtn = document.getElementById("resetSeedBtn");
 const todayBtn = document.getElementById("todayBtn");
 const prevBtn = document.getElementById("prevBtn");
 const nextBtn = document.getElementById("nextBtn");
 const rowsEl = document.getElementById("rows");
 const statusEl = document.getElementById("status");
 const kpisEl = document.getElementById("kpis");
+const utcBadgeEl = document.getElementById("utcBadge");
+const settingsKey = "flightops_dashboard_use_zulu";
+const useZulu = (() => {
+  try { return localStorage.getItem(settingsKey) === "1"; } catch (_) { return false; }
+})();
+utcBadgeEl.style.display = useZulu ? "inline-flex" : "none";
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function statusClass(s) { return s === "confirmed" ? "confirmed" : (s === "cancelled" ? "cancelled" : "pending"); }
@@ -281,9 +348,8 @@ function fromControlsToDate(dateStr, timeStr, isZulu) {
 }
 
 function setControlsFromRange(start, end) {
-  const isZulu = zuluToggleEl.checked;
-  const a = partsFromDate(start, isZulu);
-  const b = partsFromDate(end, isZulu);
+  const a = partsFromDate(start, useZulu);
+  const b = partsFromDate(end, useZulu);
   fromDateEl.value = a.date;
   fromTimeEl.value = a.time;
   toDateEl.value = b.date;
@@ -291,42 +357,77 @@ function setControlsFromRange(start, end) {
 }
 
 function readRangeFromControls() {
-  const isZulu = zuluToggleEl.checked;
-  const start = fromControlsToDate(fromDateEl.value, fromTimeEl.value, isZulu);
-  const end = fromControlsToDate(toDateEl.value, toTimeEl.value, isZulu);
+  const start = fromControlsToDate(fromDateEl.value, fromTimeEl.value, useZulu);
+  const end = fromControlsToDate(toDateEl.value, toTimeEl.value, useZulu);
   if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   return { start, end };
 }
 
-function setTodayRange() {
-  const now = new Date();
-  if (zuluToggleEl.checked) {
-    const y = now.getUTCFullYear();
-    const m = now.getUTCMonth();
-    const d = now.getUTCDate();
-    const start = new Date(Date.UTC(y, m, d, 0, 0, 0, 0));
-    const end = new Date(Date.UTC(y, m, d, 23, 59, 59, 999));
-    setControlsFromRange(start, end);
-  } else {
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(now);
-    end.setHours(23, 59, 59, 999);
-    setControlsFromRange(start, end);
+function rangeFromAnchor(anchor, mode) {
+  if (useZulu) {
+    const y = anchor.getUTCFullYear();
+    const m = anchor.getUTCMonth();
+    const d = anchor.getUTCDate();
+    if (mode === "day") {
+      return { start: new Date(Date.UTC(y, m, d, 0, 0, 0, 0)), end: new Date(Date.UTC(y, m, d, 23, 59, 59, 999)) };
+    }
+    if (mode === "week") {
+      const start = new Date(Date.UTC(y, m, d, 0, 0, 0, 0));
+      const day = (start.getUTCDay() + 6) % 7;
+      start.setUTCDate(start.getUTCDate() - day);
+      const end = new Date(start);
+      end.setUTCDate(end.getUTCDate() + 6);
+      end.setUTCHours(23, 59, 59, 999);
+      return { start, end };
+    }
+    const start = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0));
+    const end = new Date(Date.UTC(y, m + 1, 0, 23, 59, 59, 999));
+    return { start, end };
   }
+  const y = anchor.getFullYear();
+  const m = anchor.getMonth();
+  const d = anchor.getDate();
+  if (mode === "day") {
+    return { start: new Date(y, m, d, 0, 0, 0, 0), end: new Date(y, m, d, 23, 59, 59, 999) };
+  }
+  if (mode === "week") {
+    const start = new Date(y, m, d, 0, 0, 0, 0);
+    const day = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - day);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+  return { start: new Date(y, m, 1, 0, 0, 0, 0), end: new Date(y, m + 1, 0, 23, 59, 59, 999) };
 }
 
-function shiftDay(delta) {
-  const range = readRangeFromControls();
-  if (!range) return;
-  range.start.setDate(range.start.getDate() + delta);
-  range.end.setDate(range.end.getDate() + delta);
+function setTodayRange() {
+  const mode = rangeModeEl.value;
+  const range = rangeFromAnchor(new Date(), mode);
   setControlsFromRange(range.start, range.end);
+}
+
+function shiftRange(delta) {
+  const mode = rangeModeEl.value;
+  const current = readRangeFromControls();
+  const anchor = current ? new Date(current.start) : new Date();
+  if (useZulu) {
+    if (mode === "day") anchor.setUTCDate(anchor.getUTCDate() + delta);
+    else if (mode === "week") anchor.setUTCDate(anchor.getUTCDate() + (7 * delta));
+    else anchor.setUTCMonth(anchor.getUTCMonth() + delta);
+  } else {
+    if (mode === "day") anchor.setDate(anchor.getDate() + delta);
+    else if (mode === "week") anchor.setDate(anchor.getDate() + (7 * delta));
+    else anchor.setMonth(anchor.getMonth() + delta);
+  }
+  const nextRange = rangeFromAnchor(anchor, mode);
+  setControlsFromRange(nextRange.start, nextRange.end);
 }
 
 function formatDisplayTime(iso) {
   const d = new Date(iso);
-  if (zuluToggleEl.checked) return d.toISOString();
+  if (useZulu) return d.toISOString();
   return d.toLocaleString("en-NZ", { hour12: false }) + " local";
 }
 
@@ -348,18 +449,13 @@ function render(bookings) {
   ].map((x) => "<div class='kpi'><div class='label'>" + x[0] + "</div><div class='value'>" + x[1] + "</div></div>").join("");
 }
 
-function setModeNote() {
-  modeNoteEl.textContent = zuluToggleEl.checked ? "Mode: Zulu / UTC" : "Mode: Local time (QT/browser timezone)";
+function openRangeModal() {
+  rangeModalEl.classList.add("open");
+  rangeModalEl.setAttribute("aria-hidden", "false");
 }
-
-async function resetSeed() {
-  const ok = confirm("Reset seeded bookings? This will delete all current bookings and reinsert the default fake dataset.");
-  if (!ok) return;
-  statusEl.textContent = "Resetting seed data...";
-  const res = await fetch("/admin/reset-seed", { method: "POST" });
-  const data = await res.json();
-  if (!res.ok || !data.ok) throw new Error(data.error || "Failed to reset seed data");
-  statusEl.textContent = "Seed reset. Deleted " + (data.deleted || 0) + ", inserted " + (data.inserted || 0) + ".";
+function closeRangeModal() {
+  rangeModalEl.classList.remove("open");
+  rangeModalEl.setAttribute("aria-hidden", "true");
 }
 
 async function load() {
@@ -378,18 +474,16 @@ async function load() {
   statusEl.textContent = "Loaded " + (data.count || 0) + " bookings.";
 }
 
-zuluToggleEl.addEventListener("change", () => {
-  const oldRange = readRangeFromControls();
-  setModeNote();
-  if (oldRange) setControlsFromRange(oldRange.start, oldRange.end);
-});
+calendarBtn.addEventListener("click", openRangeModal);
+closeModalBtn.addEventListener("click", closeRangeModal);
+rangeModalEl.addEventListener("click", (e) => { if (e.target === rangeModalEl) closeRangeModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRangeModal(); });
+rangeModeEl.addEventListener("change", () => { setTodayRange(); load().catch((e) => statusEl.textContent = e.message || "Error"); });
 todayBtn.addEventListener("click", () => { setTodayRange(); load().catch((e) => statusEl.textContent = e.message || "Error"); });
-prevBtn.addEventListener("click", () => { shiftDay(-1); load().catch((e) => statusEl.textContent = e.message || "Error"); });
-nextBtn.addEventListener("click", () => { shiftDay(1); load().catch((e) => statusEl.textContent = e.message || "Error"); });
-resetSeedBtn.addEventListener("click", () => { resetSeed().then(() => load()).catch((e) => statusEl.textContent = e.message || "Error"); });
-loadBtn.addEventListener("click", () => { load().catch((e) => statusEl.textContent = e.message || "Error"); });
+prevBtn.addEventListener("click", () => { shiftRange(-1); load().catch((e) => statusEl.textContent = e.message || "Error"); });
+nextBtn.addEventListener("click", () => { shiftRange(1); load().catch((e) => statusEl.textContent = e.message || "Error"); });
+loadBtn.addEventListener("click", () => { load().then(closeRangeModal).catch((e) => statusEl.textContent = e.message || "Error"); });
 
-setModeNote();
 setTodayRange();
 load().catch((e) => statusEl.textContent = e.message || "Error");
 </script>
