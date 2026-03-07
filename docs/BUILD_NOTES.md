@@ -1,6 +1,13 @@
 # Build Notes
 
 ## 2026-03-07
+### Seat Modal Passenger Quick Actions
+- Added double-click / double-tap behavior on seat-modal passenger chips to open `/booking-edit` for that passenger's booking.
+- Added drag-out workflow from seat modal to ops board:
+  - starting a passenger drag closes the modal
+  - dropping onto board lane/time replots the passenger’s booking (booking-level move, so all booking passengers move together).
+- Added chip drag payload support for booking move drop path compatibility with existing board replot logic.
+
 ### Ops Board Movement Seat Map + Persistence
 - Shifted ops-board focus from individual passenger booking bars toward movement markers (`In` / `Out`) with marker-click seat-map modal.
 - Added movement seat-map modal UX:

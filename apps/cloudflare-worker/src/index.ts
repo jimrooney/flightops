@@ -1429,9 +1429,10 @@ function renderSeatModal() {
           const chip = document.createElement("div");
           chip.className = "pax-chip";
           chip.draggable = true;
-          chip.textContent = initials(paxById.get(paxId));
-          chip.title = paxById.get(paxId).firstName + " " + paxById.get(paxId).lastName;
-          chip.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", paxId));
+          const pax = paxById.get(paxId);
+          chip.textContent = initials(pax);
+          chip.title = pax.firstName + " " + pax.lastName;
+          attachPassengerChipHandlers(chip, pax);
           seatEl.appendChild(chip);
         }
         dropTargetHandlers(seatEl, seatId);
@@ -1448,7 +1449,7 @@ function renderSeatModal() {
     chip.draggable = true;
     chip.textContent = initials(p);
     chip.title = p.firstName + " " + p.lastName;
-    chip.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", p.paxKey));
+    attachPassengerChipHandlers(chip, p);
     seatPoolEl.appendChild(chip);
   });
   dropTargetHandlers(seatPoolEl, null);
@@ -1468,6 +1469,44 @@ function closeSeatModal() {
   clearDragHighlights();
   seatModalEl.classList.remove("open");
   seatModalEl.setAttribute("aria-hidden", "true");
+}
+
+function attachPassengerChipHandlers(chip, passenger) {
+  function openBookingEditor() {
+    const bookingId = passenger?.bookingId;
+    if (!bookingId) return;
+    window.location.href = "/booking-edit?id=" + encodeURIComponent(bookingId);
+  }
+
+  chip.addEventListener("dragstart", (e) => {
+    const payload = {
+      bookingId: passenger.bookingId,
+      source: "seat-modal-passenger",
+      grabOffsetPx: 0,
+      anchorToDraggedLeftPx: 0
+    };
+    e.dataTransfer.setData("application/json", JSON.stringify(payload));
+    e.dataTransfer.setData("text/plain", String(passenger.bookingId || ""));
+    e.dataTransfer.effectAllowed = "move";
+    // Close modal after drag starts so board lanes can receive the drop.
+    setTimeout(() => closeSeatModal(), 0);
+  });
+
+  chip.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    openBookingEditor();
+  });
+
+  let lastTapMs = 0;
+  chip.addEventListener("touchend", () => {
+    const now = Date.now();
+    if (now - lastTapMs < 320) {
+      openBookingEditor();
+      lastTapMs = 0;
+      return;
+    }
+    lastTapMs = now;
+  }, { passive: true });
 }
 
 function clampPx(px) {
