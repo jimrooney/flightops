@@ -1,6 +1,21 @@
 # Build Notes
 
 ## 2026-03-07
+### Ops Board Day Pool + DayVFR Timeline Controls
+- Added ops-board configuration settings under `/configuration`:
+  - start time
+  - end time
+  - location selector (default Queenstown, NZ)
+  - `DayVFR` daylight-only toggle
+- Updated ops-board timeline rendering to use configured valid-hour windows while preserving hour blocks.
+- Updated data fetch range to full calendar periods (day/week/month) so bookings outside plotting windows still load.
+- Added `Bookings For Day` marker tray above board controls; all bookings for the selected day appear even when outside daylight plotting windows.
+- Added drag-highlight for a booking’s scheduled hour block while dragging its day-tray marker.
+- Out-of-window bookings now clamp to the first valid hour of that booking day for plotting visibility.
+- Updated marker collision behavior:
+  - same-time markers on same rail combine
+  - same-time markers on different rails remain separate and show invalid red border.
+
 ### Seat Modal Passenger Quick Actions
 - Added double-click / double-tap behavior on seat-modal passenger chips to open `/booking-edit` for that passenger's booking.
 - Added drag-out workflow from seat modal to ops board:

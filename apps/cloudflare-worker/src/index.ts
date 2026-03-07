@@ -90,6 +90,9 @@ const configurationHtml = `<!doctype html>
     .btn { text-decoration: none; padding: 10px 14px; border-radius: 10px; border: 1px solid #c8d5e7; color: #10243f; background: #f8fbff; cursor: pointer; font: inherit; }
     .danger { background: #fee2e2; color: #991b1b; border: 1px solid #f5b7b7; }
     .toggle { display: flex; gap: 8px; align-items: center; font-weight: 600; margin-top: 14px; }
+    .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 12px; }
+    label { font-size: .84rem; color: #4f6480; display: grid; gap: 5px; }
+    input, select { height: 36px; border-radius: 8px; border: 1px solid #c8d5e7; padding: 0 10px; font: inherit; background: #fff; }
     input[type="checkbox"] { width: 18px; height: 18px; accent-color: #0f62fe; }
     #status { margin-top: 10px; color: #4f6480; }
     code { background: #eef4ff; border: 1px solid #d6e4ff; border-radius: 8px; padding: 2px 6px; }
@@ -114,6 +117,20 @@ const configurationHtml = `<!doctype html>
     <p style="margin-top:16px">Primary API base: <code>https://api.flightops.co.nz</code></p>
     <p style="margin-top:8px">Local LAN dev command: <code>npm run dev -w @flightops/cloudflare-worker -- --ip 0.0.0.0 --port 8787</code></p>
     <label class="toggle"><input id="zuluToggleConfig" type="checkbox" /> Use Zulu / UTC on Dashboard</label>
+    <h2 style="margin:14px 0 6px; font-size:1.05rem;">Ops Board Time Settings</h2>
+    <div class="grid">
+      <label>Start Time<input id="opsStartTime" type="time" value="06:00" /></label>
+      <label>End Time<input id="opsEndTime" type="time" value="20:00" /></label>
+      <label>Location
+        <select id="opsLocation">
+          <option value="queenstown">Queenstown, NZ</option>
+          <option value="auckland">Auckland, NZ</option>
+          <option value="wellington">Wellington, NZ</option>
+          <option value="christchurch">Christchurch, NZ</option>
+        </select>
+      </label>
+      <label class="toggle"><input id="opsDayVfr" type="checkbox" /> DayVFR (daylight only)</label>
+    </div>
     <div class="actions">
       <button id="resetSeedBtn" class="btn danger" title="Delete current bookings and reinsert default seed">Reset Seed Data</button>
       <button id="testSoundBtn" class="btn" title="Play browser completion sound">Test Browser Sound</button>
@@ -123,9 +140,17 @@ const configurationHtml = `<!doctype html>
 </main>
 <script>
 const settingsKey = "flightops_dashboard_use_zulu";
+const opsStartTimeKey = "flightops_ops_start_time";
+const opsEndTimeKey = "flightops_ops_end_time";
+const opsLocationKey = "flightops_ops_location";
+const opsDayVfrKey = "flightops_ops_dayvfr";
 const zuluToggleConfigEl = document.getElementById("zuluToggleConfig");
 const resetSeedBtn = document.getElementById("resetSeedBtn");
 const testSoundBtn = document.getElementById("testSoundBtn");
+const opsStartTimeEl = document.getElementById("opsStartTime");
+const opsEndTimeEl = document.getElementById("opsEndTime");
+const opsLocationEl = document.getElementById("opsLocation");
+const opsDayVfrEl = document.getElementById("opsDayVfr");
 const statusEl = document.getElementById("status");
 
 function readZuluSetting() {
@@ -133,6 +158,17 @@ function readZuluSetting() {
 }
 function writeZuluSetting(value) {
   try { localStorage.setItem(settingsKey, value ? "1" : "0"); } catch (_) {}
+}
+function readSetting(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    return (v === null || v === "") ? fallback : v;
+  } catch (_) {
+    return fallback;
+  }
+}
+function writeSetting(key, value) {
+  try { localStorage.setItem(key, value); } catch (_) {}
 }
 
 async function resetSeed() {
@@ -164,11 +200,21 @@ function playCompletionTone() {
 }
 
 zuluToggleConfigEl.checked = readZuluSetting();
+opsStartTimeEl.value = readSetting(opsStartTimeKey, "06:00");
+opsEndTimeEl.value = readSetting(opsEndTimeKey, "20:00");
+opsLocationEl.value = readSetting(opsLocationKey, "queenstown");
+opsDayVfrEl.checked = readSetting(opsDayVfrKey, "0") === "1";
 zuluToggleConfigEl.addEventListener("change", () => {
   writeZuluSetting(zuluToggleConfigEl.checked);
   statusEl.textContent = zuluToggleConfigEl.checked
     ? "Dashboard time mode set to Zulu / UTC."
     : "Dashboard time mode set to Local time (QT/browser timezone).";
+});
+["change", "input"].forEach((evt) => {
+  opsStartTimeEl.addEventListener(evt, () => { writeSetting(opsStartTimeKey, opsStartTimeEl.value || "06:00"); statusEl.textContent = "Ops start time saved."; });
+  opsEndTimeEl.addEventListener(evt, () => { writeSetting(opsEndTimeKey, opsEndTimeEl.value || "20:00"); statusEl.textContent = "Ops end time saved."; });
+  opsLocationEl.addEventListener(evt, () => { writeSetting(opsLocationKey, opsLocationEl.value || "queenstown"); statusEl.textContent = "Ops location saved."; });
+  opsDayVfrEl.addEventListener(evt, () => { writeSetting(opsDayVfrKey, opsDayVfrEl.checked ? "1" : "0"); statusEl.textContent = opsDayVfrEl.checked ? "DayVFR enabled." : "DayVFR disabled."; });
 });
 resetSeedBtn.addEventListener("click", () => { resetSeed().catch((e) => statusEl.textContent = e.message || "Error"); });
 testSoundBtn.addEventListener("click", () => {
@@ -577,6 +623,7 @@ const bookingHtml = `<!doctype html>
     .tab.active { background: #0f62fe; color: #fff; border-color: #0f62fe; }
     .panel { background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin: 8px 0 12px; }
+    .row.top-controls { align-items: flex-start; }
     input, button { height: 36px; border-radius: 8px; border: 1px solid #c8d5e7; padding: 0 10px; font: inherit; }
     button { background: #0f62fe; color: #fff; border: 0; cursor: pointer; }
     .ghost { background: #ecf3ff; color: #11438d; border: 1px solid #c8d5e7; }
@@ -1025,15 +1072,21 @@ const opsBoardHtml = `<!doctype html>
     .board { overflow: auto; border: 1px solid #d7e1ee; border-radius: 10px; background: #fff; }
     .lane { position: relative; border-bottom: 1px solid #e8eef7; min-width: 1300px; height: 130px; }
     .lane:last-child { border-bottom: 0; }
+    .hour-highlight { position: absolute; top: 0; bottom: 0; background: rgba(37, 99, 235, 0.12); z-index: 0; pointer-events: none; }
     .lane-label { position: absolute; left: 8px; top: 8px; font-size: .85rem; color: #4f6480; font-weight: 700; }
     .tick { position: absolute; top: 0; bottom: 0; border-left: 1px dashed #d7e1ee; }
     .tick-label { position: absolute; top: 2px; left: 2px; font-size: .72rem; color: #8aa0bc; }
     .segment { position: absolute; z-index: 2; border-radius: 6px; color: #fff; font-size: .76rem; line-height: 22px; height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; user-select: none; touch-action: none; }
+    .segment.invalid { border: 2px solid #ef4444; box-sizing: border-box; }
     .inbound { background: #0f62fe; }
     .outbound { background: #025783; }
     .ground { position: absolute; z-index: 1; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; overflow: hidden; white-space: nowrap; cursor: grab; user-select: none; touch-action: none; }
     .drop-target { outline: 2px solid #60a5fa; outline-offset: -2px; }
     .dragging { opacity: .85; }
+    .day-pool { min-width: 280px; max-width: 420px; border: 1px solid #d7e1ee; border-radius: 10px; background: #f8fbff; padding: 8px; }
+    .day-pool-title { font-size: .8rem; color: #4f6480; font-weight: 700; margin-bottom: 6px; }
+    .day-pool-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 88px; overflow: auto; }
+    .day-marker { border: 1px solid #a9c0e4; border-radius: 999px; background: #ecf3ff; color: #11438d; font-size: .75rem; font-weight: 700; line-height: 24px; height: 24px; padding: 0 10px; cursor: grab; user-select: none; }
     .modal-backdrop { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.45); display: none; align-items: center; justify-content: center; z-index: 3000; }
     .modal-backdrop.open { display: flex; }
     .modal-card { width: fit-content; max-width: 94vw; max-height: 90vh; overflow: auto; background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; position: relative; }
@@ -1060,7 +1113,7 @@ const opsBoardHtml = `<!doctype html>
   </nav>
   <section class="panel">
     <h1>Operations Timeline Board</h1>
-    <div class="row">
+    <div class="row top-controls">
       <label for="viewMode">View</label>
       <select id="viewMode">
         <option value="day">Day</option>
@@ -1072,12 +1125,15 @@ const opsBoardHtml = `<!doctype html>
       <button id="nextBtn" class="ghost">&gt;</button>
       <button id="todayBtn" class="ghost">Today</button>
       <button id="loadBtn">Load Board</button>
+      <div class="day-pool">
+        <div class="day-pool-title">Bookings For Day</div>
+        <div id="dayPoolList" class="day-pool-list"></div>
+      </div>
     </div>
     <div class="legend">
       <span><span class="chip" style="background:#0f62fe"></span>Inbound scenic leg</span>
       <span><span class="chip" style="background:#0369a1"></span>Outbound return leg</span>
       <span><span class="chip" style="background:#fef3c7"></span>Ground activity window</span>
-      <span>Drag a blue leg to move booking across aircraft lanes and times</span>
     </div>
     <div id="status">Choose a view/day and load board.</div>
     <div class="board" id="board"></div>
@@ -1112,6 +1168,7 @@ const seatModalTitleEl = document.getElementById("seatModalTitle");
 const seatModalMetaEl = document.getElementById("seatModalMeta");
 const seatGridEl = document.getElementById("seatGrid");
 const seatPoolEl = document.getElementById("seatPool");
+const dayPoolListEl = document.getElementById("dayPoolList");
 
 const aircraft = ["C208 Alpha", "C208 Beta", "GA8", "BN2"];
 const inboundMin = 45;
@@ -1125,7 +1182,7 @@ const slotHeightPx = 40;
 const firstSlotTopPx = 28;
 const groundOffsetPx = 4;
 
-let model = { startMs: 0, endMs: 0, totalMin: 1440, bookings: [] };
+let model = { startMs: 0, endMs: 0, queryStartMs: 0, queryEndMs: 0, totalMin: 1440, bookings: [], windows: [] };
 let currentDropLane = null;
 let pointerDrag = null;
 let suppressClickUntilMs = 0;
@@ -1134,12 +1191,96 @@ const seatAssignments = {};
 let activeMovementId = null;
 let seatSaveTimer = null;
 const pendingSeatSaveIds = new Set();
+let highlightedBookingId = null;
+const opsStartTimeKey = "flightops_ops_start_time";
+const opsEndTimeKey = "flightops_ops_end_time";
+const opsLocationKey = "flightops_ops_location";
+const opsDayVfrKey = "flightops_ops_dayvfr";
+const locationCatalog = {
+  queenstown: {
+    label: "Queenstown, NZ",
+    sunriseByMonth: ["06:00","06:30","07:05","07:30","07:50","08:15","08:05","07:30","06:45","06:00","05:35","05:25"],
+    sunsetByMonth:  ["21:40","21:10","20:20","19:20","18:15","17:35","17:50","18:20","18:50","19:45","20:40","21:25"]
+  },
+  auckland: {
+    label: "Auckland, NZ",
+    sunriseByMonth: ["06:00","06:20","06:45","07:05","07:20","07:35","07:25","07:00","06:25","05:50","05:30","05:30"],
+    sunsetByMonth:  ["20:45","20:30","20:00","19:20","18:45","18:15","18:25","18:50","19:15","19:45","20:20","20:40"]
+  },
+  wellington: {
+    label: "Wellington, NZ",
+    sunriseByMonth: ["05:45","06:10","06:40","07:00","07:20","07:45","07:35","07:05","06:25","05:45","05:20","05:15"],
+    sunsetByMonth:  ["20:55","20:35","19:55","19:10","18:35","18:00","18:10","18:35","19:00","19:35","20:15","20:45"]
+  },
+  christchurch: {
+    label: "Christchurch, NZ",
+    sunriseByMonth: ["05:55","06:25","06:55","07:20","07:45","08:10","08:00","07:25","06:45","06:00","05:35","05:25"],
+    sunsetByMonth:  ["21:20","20:55","20:10","19:20","18:40","18:00","18:10","18:35","19:05","19:45","20:30","21:05"]
+  }
+};
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function dateToYmd(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function minutesBetween(a, b) { return Math.floor((b - a) / 60000); }
 function initials(p) { return ((p.firstName?.[0] || "?") + (p.lastName?.[0] || "?")).toUpperCase(); }
+function readLocalSetting(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    return (v === null || v === "") ? fallback : v;
+  } catch (_) {
+    return fallback;
+  }
+}
+function parseHmToMinutes(hm) {
+  const m = String(hm || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]); const mi = Number(m[2]);
+  if (h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+  return (h * 60) + mi;
+}
+function ceilHour(min) { return Math.min(24 * 60, Math.ceil(min / 60) * 60); }
+function floorHour(min) { return Math.max(0, Math.floor(min / 60) * 60); }
+function getOpsBoardSettings() {
+  const location = readLocalSetting(opsLocationKey, "queenstown");
+  const startHm = readLocalSetting(opsStartTimeKey, "06:00");
+  const endHm = readLocalSetting(opsEndTimeKey, "20:00");
+  const startMin = parseHmToMinutes(startHm) ?? 360;
+  const endMin = parseHmToMinutes(endHm) ?? 1200;
+  return {
+    dayVfr: readLocalSetting(opsDayVfrKey, "0") === "1",
+    location,
+    startMin,
+    endMin
+  };
+}
+function dayVfrWindowMinutes(date, locationKey) {
+  const loc = locationCatalog[locationKey] || locationCatalog.queenstown;
+  const month = date.getMonth();
+  const rise = parseHmToMinutes(loc.sunriseByMonth[month]) ?? 360;
+  const set = parseHmToMinutes(loc.sunsetByMonth[month]) ?? 1200;
+  return { startMin: floorHour(rise), endMin: ceilHour(set) };
+}
+function dayStartLocal(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+function windowFromDay(dayDate, startMin, endMin) {
+  const s = new Date(dayDate);
+  s.setHours(0, 0, 0, 0);
+  s.setMinutes(startMin);
+  const e = new Date(dayDate);
+  e.setHours(0, 0, 0, 0);
+  e.setMinutes(endMin);
+  if (e <= s) return null;
+  return { startMs: s.getTime(), endMs: e.getTime(), dayYmd: dateToYmd(dayDate) };
+}
 
 function parseAnchorDate() {
   const value = anchorInputEl.value;
@@ -1147,23 +1288,53 @@ function parseAnchorDate() {
 }
 
 function getRange(anchor, mode) {
-  const start = new Date(anchor);
+  const settings = getOpsBoardSettings();
+  const windows = [];
+  const a = dayStartLocal(anchor);
+  let queryStart = new Date(a);
+  let queryEnd = new Date(a);
   if (mode === "day") {
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start); end.setDate(end.getDate() + 1);
-    return { start, end, totalMin: 1440 };
+    queryStart = dayStartLocal(a);
+    queryEnd = addDays(queryStart, 1);
+    const span = settings.dayVfr ? dayVfrWindowMinutes(a, settings.location) : { startMin: settings.startMin, endMin: settings.endMin };
+    const w = windowFromDay(a, span.startMin, span.endMin);
+    if (w) windows.push(w);
+  } else if (mode === "week") {
+    const start = addDays(a, -((a.getDay() + 6) % 7));
+    queryStart = dayStartLocal(start);
+    queryEnd = addDays(queryStart, 7);
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(start, i);
+      const span = settings.dayVfr ? dayVfrWindowMinutes(d, settings.location) : { startMin: settings.startMin, endMin: settings.endMin };
+      const w = windowFromDay(d, span.startMin, span.endMin);
+      if (w) windows.push(w);
+    }
+  } else {
+    const start = new Date(a.getFullYear(), a.getMonth(), 1);
+    queryStart = dayStartLocal(start);
+    queryEnd = new Date(a.getFullYear(), a.getMonth() + 1, 1, 0, 0, 0, 0);
+    const days = new Date(a.getFullYear(), a.getMonth() + 1, 0).getDate();
+    for (let i = 0; i < days; i++) {
+      const d = addDays(start, i);
+      const span = settings.dayVfr ? dayVfrWindowMinutes(d, settings.location) : { startMin: settings.startMin, endMin: settings.endMin };
+      const w = windowFromDay(d, span.startMin, span.endMin);
+      if (w) windows.push(w);
+    }
   }
-  if (mode === "week") {
-    const day = (start.getDay() + 6) % 7;
-    start.setDate(start.getDate() - day);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start); end.setDate(end.getDate() + 7);
-    return { start, end, totalMin: 10080 };
+  if (!windows.length) {
+    const fallbackStart = new Date(a); fallbackStart.setHours(6, 0, 0, 0);
+    const fallbackEnd = new Date(a); fallbackEnd.setHours(20, 0, 0, 0);
+    windows.push({ startMs: fallbackStart.getTime(), endMs: fallbackEnd.getTime(), dayYmd: dateToYmd(a) });
   }
-  start.setDate(1);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start); end.setMonth(end.getMonth() + 1);
-  return { start, end, totalMin: minutesBetween(start, end) };
+  const totalMin = windows.reduce((sum, w) => sum + Math.max(0, minutesBetween(w.startMs, w.endMs)), 0);
+  return {
+    start: new Date(windows[0].startMs),
+    end: new Date(windows[windows.length - 1].endMs),
+    queryStart: queryStart,
+    queryEnd: queryEnd,
+    totalMin,
+    windows
+  };
 }
 
 function axisWidth() {
@@ -1178,20 +1349,74 @@ function segmentWidthPx(durationMin, minWidthPx = 42) {
   return Math.max(minWidthPx, toPx(durationMin) - toPx(0));
 }
 
+function timelineMinuteForMs(ms) {
+  let acc = 0;
+  for (const w of model.windows) {
+    if (ms <= w.startMs) return acc;
+    if (ms >= w.endMs) {
+      acc += minutesBetween(w.startMs, w.endMs);
+      continue;
+    }
+    return acc + minutesBetween(w.startMs, ms);
+  }
+  return acc;
+}
+
+function timelineMinuteToMs(minute) {
+  let acc = 0;
+  for (const w of model.windows) {
+    const len = minutesBetween(w.startMs, w.endMs);
+    if (minute <= (acc + len)) {
+      return w.startMs + ((minute - acc) * 60000);
+    }
+    acc += len;
+  }
+  const last = model.windows[model.windows.length - 1];
+  return last ? last.endMs : Date.now();
+}
+
+function overlapsAnyWindow(msStart, msEnd) {
+  return model.windows.some((w) => msStart < w.endMs && msEnd > w.startMs);
+}
+
+function firstWindowStartForBookingDay(ms) {
+  const ymd = dateToYmd(new Date(ms));
+  const sameDay = model.windows.find((w) => w.dayYmd === ymd);
+  if (sameDay) return sameDay.startMs;
+  return model.windows.length ? model.windows[0].startMs : ms;
+}
+
 function getBookingLayout(booking) {
-  const startMin = minutesBetween(model.startMs, booking.startMs);
-  const outMin = startMin + gapMin;
+  let inStartMs = booking.startMs;
+  const originalInStartMs = inStartMs;
+  const originalOutStartMs = originalInStartMs + (gapMin * 60000);
+  const originalOutEndMs = originalOutStartMs + (outboundMin * 60000);
+  const originalInEndMs = originalInStartMs + (inboundMin * 60000);
+  const outsideAllWindows = !overlapsAnyWindow(originalInStartMs, originalInEndMs) && !overlapsAnyWindow(originalOutStartMs, originalOutEndMs);
+  if (outsideAllWindows) {
+    // Keep booking visible: if outside valid hours, pin to first valid hour on that day.
+    inStartMs = firstWindowStartForBookingDay(originalInStartMs);
+  }
+  const inEndMs = inStartMs + (inboundMin * 60000);
+  const outStartMs = inStartMs + (gapMin * 60000);
+  const outEndMs = outStartMs + (outboundMin * 60000);
+  const startMin = timelineMinuteForMs(inStartMs);
+  const inEndMin = timelineMinuteForMs(inEndMs);
+  const outMin = timelineMinuteForMs(outStartMs);
+  const outEndMin = timelineMinuteForMs(outEndMs);
   const inLeftPx = toPx(startMin);
-  const inWidthPx = segmentWidthPx(inboundMin);
+  const inWidthPx = Math.max(42, toPx(inEndMin) - toPx(startMin));
   const outLeftPx = toPx(outMin);
+  const outWidthPx = Math.max(42, toPx(outEndMin) - toPx(outMin));
   const groundLeftPx = inLeftPx + inWidthPx - overlapPx;
-  const groundRightPx = outLeftPx + overlapPx;
+  const groundRightPx = outLeftPx + outWidthPx + overlapPx;
   return {
     startMin,
     outMin,
     inLeftPx,
     inWidthPx,
     outLeftPx,
+    outWidthPx,
     groundLeftPx,
     groundWidthPx: groundRightPx - groundLeftPx
   };
@@ -1201,8 +1426,8 @@ function movementStartMs(booking, type) {
   return type === "outbound" ? booking.startMs + (gapMin * 60000) : booking.startMs;
 }
 
-function movementId(laneIndex, type, startMs) {
-  return laneIndex + ":" + type + ":" + startMs;
+function movementId(laneIndex, type, startMs, bookingId = "") {
+  return laneIndex + ":" + type + ":" + startMs + ":" + bookingId;
 }
 
 function seatFieldLabelForMovement(type) {
@@ -1341,7 +1566,8 @@ function findCounterpartMovement(movement) {
   const otherStart = movement.type === "inbound"
     ? (movement.startMs + (gapMin * 60000))
     : (movement.startMs - (gapMin * 60000));
-  const id = movementId(movement.laneIndex, otherType, otherStart);
+  const bookingId = movement.bookingIds?.[0] || "";
+  const id = movementId(movement.laneIndex, otherType, otherStart, bookingId);
   return movementMap.get(id) || null;
 }
 
@@ -1552,7 +1778,15 @@ function laneFromPoint(clientX, clientY) {
   return el ? el.closest(".lane") : null;
 }
 
-async function applyDropMove(lane, clientX, dragPayload, fallbackBookingId) {
+function slotFromClientY(lane, clientY) {
+  if (typeof clientY !== "number") return 0;
+  const rect = lane.getBoundingClientRect();
+  const y = clientY - rect.top;
+  const split = firstSlotTopPx + (slotHeightPx / 2);
+  return y > split ? 1 : 0;
+}
+
+async function applyDropMove(lane, clientX, clientY, dragPayload, fallbackBookingId) {
   const bookingId = dragPayload?.bookingId || fallbackBookingId;
   if (!bookingId) return;
   const booking = model.bookings.find((b) => b.id === bookingId);
@@ -1564,13 +1798,16 @@ async function applyDropMove(lane, clientX, dragPayload, fallbackBookingId) {
   const droppedAnchorLeftPx = clampPx(droppedDraggedLeftPx - anchorToDraggedLeftPx);
   const rawMinuteOffset = (droppedAnchorLeftPx / axisWidth()) * model.totalMin;
   const snappedMinuteOffset = clamp(Math.round(rawMinuteOffset / snapMinutes) * snapMinutes, 0, model.totalMin);
-  const newStartMs = model.startMs + snappedMinuteOffset * 60000;
+  const newStartMs = timelineMinuteToMs(snappedMinuteOffset);
   const newLaneIndex = Number(lane.dataset.laneIndex);
+  const newSlotHint = slotFromClientY(lane, clientY);
 
   const oldStartMs = booking.startMs;
   const oldLaneIndex = booking.laneIndex;
+  const oldSlotHint = booking.slotHint;
   booking.startMs = newStartMs;
   booking.laneIndex = newLaneIndex;
+  booking.slotHint = newSlotHint;
   renderBoard();
 
   try {
@@ -1602,6 +1839,7 @@ async function applyDropMove(lane, clientX, dragPayload, fallbackBookingId) {
   } catch (err) {
     booking.startMs = oldStartMs;
     booking.laneIndex = oldLaneIndex;
+    booking.slotHint = oldSlotHint;
     renderBoard();
     statusEl.textContent = (err && err.message) ? err.message : "Failed to save move.";
   }
@@ -1669,7 +1907,7 @@ function attachDragBehavior(seg, booking, segmentType, draggedLeftPx, anchorLeft
       statusEl.textContent = "Drop booking over an aircraft lane to move it.";
       return;
     }
-    applyDropMove(lane, e.clientX, endedDrag, endedDrag.bookingId);
+    applyDropMove(lane, e.clientX, e.clientY, endedDrag, endedDrag.bookingId);
   });
 
   seg.addEventListener("pointercancel", (e) => {
@@ -1701,22 +1939,102 @@ function addTick(lane, minute, label) {
   lane.appendChild(t);
 }
 
+function bookingHourBlock(booking) {
+  const d = new Date(booking.startMs);
+  d.setMinutes(0, 0, 0);
+  const startMs = d.getTime();
+  const endMs = startMs + 3600000;
+  const startMin = timelineMinuteForMs(startMs);
+  const endMin = timelineMinuteForMs(endMs);
+  return { startMin, endMin };
+}
+
 function buildTicks(lane) {
-  const mode = viewModeEl.value;
-  if (mode === "day") {
-    for (let h = 0; h <= 24; h++) addTick(lane, h * 60, h < 24 ? pad(h) + ":00" : "");
-    return;
+  model.windows.forEach((w) => {
+    const start = new Date(w.startMs);
+    start.setMinutes(0, 0, 0);
+    const endMs = w.endMs;
+    for (let t = start.getTime(); t <= endMs; t += 3600000) {
+      if (t < w.startMs || t > w.endMs) continue;
+      const d = new Date(t);
+      const minute = timelineMinuteForMs(t);
+      addTick(lane, minute, pad(d.getHours()) + ":00");
+    }
+    const dayMinute = timelineMinuteForMs(w.startMs);
+    addTick(lane, dayMinute, w.dayYmd.slice(5));
+  });
+}
+
+function isBookingVisibleInWindows(booking) {
+  return true;
+}
+
+function movementForBooking(booking, laneIndex, type) {
+  const startMs = movementStartMs(booking, type);
+  return {
+    id: movementId(laneIndex, type, startMs, booking.id),
+    laneIndex,
+    aircraftName: aircraft[laneIndex],
+    type,
+    startMs,
+    startMin: timelineMinuteForMs(startMs),
+    durationMin: type === "inbound" ? inboundMin : outboundMin,
+    bookingIds: [booking.id],
+    passengers: booking.passengers.map((p) => ({
+      paxKey: booking.id + "::" + p.id,
+      bookingId: booking.id,
+      paxId: p.id,
+      firstName: p.firstName,
+      lastName: p.lastName
+    }))
+  };
+}
+
+function mergeMovements(movements, laneIndex, type, slot) {
+  const first = movements[0];
+  const merged = {
+    id: movements.length === 1
+      ? first.id
+      : movementId(laneIndex, type, first.startMs, "slot" + slot + "_" + first.startMs),
+    laneIndex,
+    aircraftName: aircraft[laneIndex],
+    type,
+    startMs: first.startMs,
+    startMin: first.startMin,
+    durationMin: first.durationMin,
+    bookingIds: [],
+    passengers: []
+  };
+  movements.forEach((m) => {
+    m.bookingIds.forEach((id) => {
+      if (!merged.bookingIds.includes(id)) merged.bookingIds.push(id);
+    });
+    m.passengers.forEach((p) => {
+      if (!merged.passengers.some((x) => x.paxKey === p.paxKey)) merged.passengers.push(p);
+    });
+  });
+  return merged;
+}
+
+function addSegment(lane, movement, startMin, durationMin, topPx, text, invalid = false) {
+  const seg = document.createElement("div");
+  const type = movement.type;
+  seg.className = type === "ground" ? "ground" : ("segment " + type + (invalid ? " invalid" : ""));
+  const leftPx = toPx(startMin);
+  seg.style.left = leftPx + "px";
+  seg.style.width = segmentWidthPx(durationMin) + "px";
+  if (type !== "ground") seg.style.top = topPx + "px";
+  seg.textContent = text;
+  seg.addEventListener("click", () => openSeatModal(movement.id));
+  if (movement.bookingIds.length === 1) {
+    const booking = model.bookings.find((b) => b.id === movement.bookingIds[0]);
+    if (booking) {
+      const layout = getBookingLayout(booking);
+      const anchorLeftPx = type === "outbound" ? layout.outLeftPx : layout.inLeftPx;
+      attachDragBehavior(seg, booking, type, leftPx, anchorLeftPx);
+    }
   }
-  if (mode === "week") {
-    const names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    for (let d = 0; d <= 7; d++) addTick(lane, d * 1440, d < 7 ? names[d] : "");
-    return;
-  }
-  const days = Math.round(model.totalMin / 1440);
-  for (let d = 0; d <= days; d++) {
-    const label = d < days && (d % 2 === 0) ? String(d + 1) : "";
-    addTick(lane, d * 1440, label);
-  }
+  lane.appendChild(seg);
 }
 
 function laneElement(name, laneIndex) {
@@ -1728,6 +2046,17 @@ function laneElement(name, laneIndex) {
   label.textContent = name;
   lane.appendChild(label);
   buildTicks(lane);
+  if (highlightedBookingId) {
+    const booking = model.bookings.find((b) => b.id === highlightedBookingId);
+    if (booking) {
+      const block = bookingHourBlock(booking);
+      const hl = document.createElement("div");
+      hl.className = "hour-highlight";
+      hl.style.left = toPx(block.startMin) + "px";
+      hl.style.width = Math.max(20, toPx(block.endMin) - toPx(block.startMin)) + "px";
+      lane.appendChild(hl);
+    }
+  }
 
   lane.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -1747,31 +2076,10 @@ function laneElement(name, laneIndex) {
     if (rawPayload) {
       try { dragPayload = JSON.parse(rawPayload); } catch (_) { dragPayload = null; }
     }
-    await applyDropMove(lane, e.clientX, dragPayload, fallbackBookingId);
+    await applyDropMove(lane, e.clientX, e.clientY, dragPayload, fallbackBookingId);
   });
 
   return lane;
-}
-
-function addSegment(lane, movement, startMin, durationMin, topPx, text) {
-  const seg = document.createElement("div");
-  const type = movement.type;
-  seg.className = type === "ground" ? "ground" : ("segment " + type);
-  const leftPx = toPx(startMin);
-  seg.style.left = leftPx + "px";
-  seg.style.width = segmentWidthPx(durationMin) + "px";
-  if (type !== "ground") seg.style.top = topPx + "px";
-  seg.textContent = text;
-  seg.addEventListener("click", () => openSeatModal(movement.id));
-  if (movement.bookingIds.length === 1) {
-    const booking = model.bookings.find((b) => b.id === movement.bookingIds[0]);
-    if (booking) {
-      const layout = getBookingLayout(booking);
-      const anchorLeftPx = type === "outbound" ? layout.outLeftPx : layout.inLeftPx;
-      attachDragBehavior(seg, booking, type, leftPx, anchorLeftPx);
-    }
-  }
-  lane.appendChild(seg);
 }
 
 function addGroundSegmentPx(lane, movement, leftPx, widthPx, topPx, text) {
@@ -1800,13 +2108,32 @@ function slotForBookings(bookingsInLane) {
   const sorted = [...bookingsInLane].sort((a, b) => a.startMs - b.startMs);
   const slotEnd = Array(maxRowSlots).fill(Number.NEGATIVE_INFINITY);
   const slotMap = new Map();
-  sorted.forEach((booking) => {
-    let slot = slotEnd.findIndex((endMs) => booking.startMs >= endMs);
-    if (slot < 0) {
-      slot = slotEnd[0] <= slotEnd[1] ? 0 : 1;
-    }
-    slotEnd[slot] = bookingWindowEndMs(booking);
-    slotMap.set(booking.id, slot);
+  const groups = new Map();
+  sorted.forEach((b) => {
+    if (!groups.has(b.startMs)) groups.set(b.startMs, []);
+    groups.get(b.startMs).push(b);
+  });
+  Array.from(groups.keys()).sort((a, b) => a - b).forEach((startMs) => {
+    const group = groups.get(startMs) || [];
+    const usedInGroup = new Set();
+    group.forEach((booking) => {
+      let slot = (typeof booking.slotHint === "number") ? clamp(Math.round(booking.slotHint), 0, maxRowSlots - 1) : -1;
+      if (slot < 0) {
+        // Default: keep same-time bookings separate unless user explicitly drops onto same rail.
+        const freeSameTime = Array.from({ length: maxRowSlots }, (_, i) => i).find((i) => !usedInGroup.has(i));
+        if (typeof freeSameTime === "number") {
+          slot = freeSameTime;
+        } else {
+          slot = slotEnd[0] <= slotEnd[1] ? 0 : 1;
+        }
+      }
+      slotMap.set(booking.id, slot);
+      usedInGroup.add(slot);
+    });
+    group.forEach((booking) => {
+      const slot = slotMap.get(booking.id);
+      slotEnd[slot] = Math.max(slotEnd[slot], bookingWindowEndMs(booking));
+    });
   });
   return slotMap;
 }
@@ -1829,67 +2156,69 @@ function renderBoard() {
   bookingsByLane.forEach((laneBookings, laneIndex) => {
     const lane = lanes[laneIndex];
     const slotMap = slotForBookings(laneBookings);
-    const movementById = new Map();
-    const renderedGround = new Set();
-
-    laneBookings.forEach((b) => {
-      ["inbound", "outbound"].forEach((type) => {
-        const startMs = movementStartMs(b, type);
-        const id = movementId(laneIndex, type, startMs);
-        if (!movementById.has(id)) {
-          movementById.set(id, {
-            id,
-            laneIndex,
-            aircraftName: aircraft[laneIndex],
-            type,
-            startMs,
-            startMin: minutesBetween(model.startMs, startMs),
-            durationMin: type === "inbound" ? inboundMin : outboundMin,
-            bookingIds: [],
-            passengers: []
-          });
-        }
-        const m = movementById.get(id);
-        m.bookingIds.push(b.id);
-        b.passengers.forEach((p) => {
-          const paxKey = b.id + "::" + p.id;
-          if (!m.passengers.some((x) => x.paxKey === paxKey)) {
-            m.passengers.push({
-              paxKey,
-              bookingId: b.id,
-              paxId: p.id,
-              firstName: p.firstName,
-              lastName: p.lastName
-            });
-          }
-        });
-      });
-    });
-
+    const laneMovements = [];
     laneBookings.forEach((b) => {
       const slot = slotMap.get(b.id) ?? 0;
-      const segmentTop = firstSlotTopPx + (slot * slotHeightPx);
-      const groundTop = segmentTop + groundOffsetPx;
       const layout = getBookingLayout(b);
-      const inId = movementId(laneIndex, "inbound", movementStartMs(b, "inbound"));
-      const outId = movementId(laneIndex, "outbound", movementStartMs(b, "outbound"));
-      const inMovement = movementById.get(inId);
-      const outMovement = movementById.get(outId);
-      movementMap.set(inId, inMovement);
-      movementMap.set(outId, outMovement);
-      if (inMovement && inMovement._rendered !== true) {
-        addSegment(lane, inMovement, inMovement.startMin, inMovement.durationMin, segmentTop, "In · " + inMovement.passengers.length + " pax");
-        inMovement._rendered = true;
-      }
-      if (inMovement && !renderedGround.has(inId)) {
-        addGroundSegmentPx(lane, inMovement, layout.groundLeftPx, layout.groundWidthPx, groundTop, "Ground activity");
-        renderedGround.add(inId);
-      }
-      if (outMovement && outMovement._rendered !== true) {
-        addSegment(lane, outMovement, outMovement.startMin, outMovement.durationMin, segmentTop, "Out · " + outMovement.passengers.length + " pax");
-        outMovement._rendered = true;
-      }
+      laneMovements.push({ slot, booking: b, type: "inbound", movement: movementForBooking(b, laneIndex, "inbound"), layout });
+      laneMovements.push({ slot, booking: b, type: "outbound", movement: movementForBooking(b, laneIndex, "outbound"), layout });
     });
+
+    const groups = new Map();
+    laneMovements.forEach((x) => {
+      const key = x.type + ":" + x.movement.startMs;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(x);
+    });
+
+    groups.forEach((items) => {
+      const bySlot = new Map();
+      items.forEach((x) => {
+        if (!bySlot.has(x.slot)) bySlot.set(x.slot, []);
+        bySlot.get(x.slot).push(x);
+      });
+      const invalid = bySlot.size > 1;
+      bySlot.forEach((slotItems, slot) => {
+        const type = slotItems[0].type;
+        const movement = mergeMovements(slotItems.map((s) => s.movement), laneIndex, type, slot);
+        movementMap.set(movement.id, movement);
+        const segmentTop = firstSlotTopPx + (slot * slotHeightPx);
+        const groundTop = segmentTop + groundOffsetPx;
+        addSegment(lane, movement, movement.startMin, movement.durationMin, segmentTop, (type === "inbound" ? "In · " : "Out · ") + movement.passengers.length + " pax", invalid);
+        if (type === "inbound") {
+          const layout = slotItems[0].layout;
+          addGroundSegmentPx(lane, movement, layout.groundLeftPx, layout.groundWidthPx, groundTop, "Ground activity");
+        }
+      });
+    });
+  });
+}
+
+function renderDayPool() {
+  const anchorYmd = anchorInputEl.value || dateToYmd(new Date());
+  const dayBookings = model.bookings
+    .filter((b) => dateToYmd(new Date(b.startMs)) === anchorYmd)
+    .sort((a, b) => a.startMs - b.startMs);
+  dayPoolListEl.innerHTML = "";
+  dayBookings.forEach((b) => {
+    const marker = document.createElement("div");
+    marker.className = "day-marker";
+    marker.textContent = b.id;
+    marker.title = new Date(b.startMs).toLocaleString("en-NZ", { hour12: false });
+    marker.draggable = true;
+    marker.addEventListener("dragstart", (e) => {
+      highlightedBookingId = b.id;
+      renderBoard();
+      const payload = { bookingId: b.id, source: "day-pool", grabOffsetPx: 0, anchorToDraggedLeftPx: 0 };
+      e.dataTransfer.setData("application/json", JSON.stringify(payload));
+      e.dataTransfer.setData("text/plain", b.id);
+      e.dataTransfer.effectAllowed = "move";
+    });
+    marker.addEventListener("dragend", () => {
+      highlightedBookingId = null;
+      renderBoard();
+    });
+    dayPoolListEl.appendChild(marker);
   });
 }
 
@@ -1899,10 +2228,13 @@ async function loadBoard() {
   const range = getRange(anchor, mode);
   model.startMs = range.start.getTime();
   model.endMs = range.end.getTime();
+  model.queryStartMs = range.queryStart.getTime();
+  model.queryEndMs = range.queryEnd.getTime();
   model.totalMin = range.totalMin;
+  model.windows = range.windows;
 
   statusEl.textContent = "Loading bookings...";
-  const url = "/sync/rezdy/bookings?fromIso=" + encodeURIComponent(new Date(model.startMs).toISOString()) + "&toIso=" + encodeURIComponent(new Date(model.endMs - 1000).toISOString());
+  const url = "/sync/rezdy/bookings?fromIso=" + encodeURIComponent(new Date(model.queryStartMs).toISOString()) + "&toIso=" + encodeURIComponent(new Date(model.queryEndMs - 1000).toISOString());
   const res = await fetch(url);
   const data = await res.json();
   const bookings = data.bookings || [];
@@ -1915,6 +2247,7 @@ async function loadBoard() {
     laneIndex: i % aircraft.length
   }));
   renderBoard();
+  renderDayPool();
   statusEl.textContent = "Loaded " + model.bookings.length + " bookings in " + mode + " view. Drag blue legs to reschedule.";
 }
 
