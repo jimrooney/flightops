@@ -1,6 +1,12 @@
 # Build Notes
 
 ## 2026-03-07
+### Ops Board Two-Booking Lane Stacking
+- Updated `/ops-board` lane rendering to support two concurrent bookings per aircraft row.
+- Added per-lane slot assignment by overlap window so bookings auto-stack into two tracks.
+- Repositioned inbound/outbound and ground activity bars per assigned slot.
+- Increased lane height to keep two tracks readable while preserving drag/drop behavior.
+
 ### Browser Completion Sound Signal (Publish + Dashboard)
 - Added configuration-page `Test Browser Sound` button to validate browser-audible completion tone.
 - Added dashboard publish-signal polling (`/admin/publish-signal`) and browser tone playback on new signal detection.

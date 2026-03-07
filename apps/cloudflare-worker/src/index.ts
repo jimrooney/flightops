@@ -1023,16 +1023,16 @@ const opsBoardHtml = `<!doctype html>
     .legend { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; font-size: .85rem; color: #4f6480; }
     .chip { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
     .board { overflow: auto; border: 1px solid #d7e1ee; border-radius: 10px; background: #fff; }
-    .lane { position: relative; border-bottom: 1px solid #e8eef7; min-width: 1300px; height: 96px; }
+    .lane { position: relative; border-bottom: 1px solid #e8eef7; min-width: 1300px; height: 130px; }
     .lane:last-child { border-bottom: 0; }
     .lane-label { position: absolute; left: 8px; top: 8px; font-size: .85rem; color: #4f6480; font-weight: 700; }
     .tick { position: absolute; top: 0; bottom: 0; border-left: 1px dashed #d7e1ee; }
     .tick-label { position: absolute; top: 2px; left: 2px; font-size: .72rem; color: #8aa0bc; }
     .segment { position: absolute; z-index: 2; border-radius: 6px; color: #fff; font-size: .76rem; line-height: 22px; height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; user-select: none; touch-action: none; }
     .segment:active { cursor: grabbing; }
-    .inbound { background: #0f62fe; top: 30px; }
-    .outbound { background: #025783; top: 30px; }
-    .ground { position: absolute; z-index: 1; top: 34px; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; overflow: hidden; white-space: nowrap; cursor: grab; user-select: none; touch-action: none; }
+    .inbound { background: #0f62fe; }
+    .outbound { background: #025783; }
+    .ground { position: absolute; z-index: 1; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; overflow: hidden; white-space: nowrap; cursor: grab; user-select: none; touch-action: none; }
     .drop-target { outline: 2px solid #60a5fa; outline-offset: -2px; }
     .dragging { opacity: .85; }
   </style>
@@ -1088,6 +1088,10 @@ const outboundMin = 45;
 const gapMin = 180;
 const snapMinutes = 30;
 const overlapPx = 14;
+const maxRowSlots = 2;
+const slotHeightPx = 40;
+const firstSlotTopPx = 28;
+const groundOffsetPx = 4;
 
 let model = { startMs: 0, endMs: 0, totalMin: 1440, bookings: [] };
 let currentDropLane = null;
@@ -1414,16 +1418,36 @@ function addSegment(lane, booking, type, startMin, durationMin, topPx, text) {
   lane.appendChild(seg);
 }
 
-function addGroundSegmentPx(lane, booking, leftPx, widthPx, text) {
+function addGroundSegmentPx(lane, booking, leftPx, widthPx, topPx, text) {
   const seg = document.createElement("a");
   seg.className = "ground";
   seg.style.left = leftPx + "px";
+  seg.style.top = topPx + "px";
   seg.style.width = Math.max(30, widthPx) + "px";
   seg.textContent = text;
   seg.href = "/booking-edit?id=" + encodeURIComponent(booking.id);
   const layout = getBookingLayout(booking);
   attachDragBehavior(seg, booking, "ground", leftPx, layout.inLeftPx);
   lane.appendChild(seg);
+}
+
+function bookingWindowEndMs(booking) {
+  return booking.startMs + ((gapMin + outboundMin) * 60000);
+}
+
+function slotForBookings(bookingsInLane) {
+  const sorted = [...bookingsInLane].sort((a, b) => a.startMs - b.startMs);
+  const slotEnd = Array(maxRowSlots).fill(Number.NEGATIVE_INFINITY);
+  const slotMap = new Map();
+  sorted.forEach((booking) => {
+    let slot = slotEnd.findIndex((endMs) => booking.startMs >= endMs);
+    if (slot < 0) {
+      slot = slotEnd[0] <= slotEnd[1] ? 0 : 1;
+    }
+    slotEnd[slot] = bookingWindowEndMs(booking);
+    slotMap.set(booking.id, slot);
+  });
+  return slotMap;
 }
 
 function renderBoard() {
@@ -1435,12 +1459,23 @@ function renderBoard() {
     return lane;
   });
 
+  const bookingsByLane = lanes.map(() => []);
   model.bookings.forEach((b) => {
-    const lane = lanes[b.laneIndex % lanes.length];
-    const layout = getBookingLayout(b);
-    addSegment(lane, b, "inbound", layout.startMin, inboundMin, 30, b.productCode + " · " + b.id + " · " + b.pax + " pax");
-    addGroundSegmentPx(lane, b, layout.groundLeftPx, layout.groundWidthPx, "Ground activity");
-    addSegment(lane, b, "outbound", layout.outMin, outboundMin, 30, b.productCode + " · " + b.id);
+    bookingsByLane[b.laneIndex % lanes.length].push(b);
+  });
+
+  bookingsByLane.forEach((laneBookings, laneIndex) => {
+    const lane = lanes[laneIndex];
+    const slotMap = slotForBookings(laneBookings);
+    laneBookings.forEach((b) => {
+      const slot = slotMap.get(b.id) ?? 0;
+      const segmentTop = firstSlotTopPx + (slot * slotHeightPx);
+      const groundTop = segmentTop + groundOffsetPx;
+      const layout = getBookingLayout(b);
+      addSegment(lane, b, "inbound", layout.startMin, inboundMin, segmentTop, b.productCode + " · " + b.id + " · " + b.pax + " pax");
+      addGroundSegmentPx(lane, b, layout.groundLeftPx, layout.groundWidthPx, groundTop, "Ground activity");
+      addSegment(lane, b, "outbound", layout.outMin, outboundMin, segmentTop, b.productCode + " · " + b.id);
+    });
   });
 }
 
