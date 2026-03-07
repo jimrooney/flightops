@@ -1,5 +1,18 @@
 # Build Notes
 
+## 2026-03-08
+### Ops Board Move + Seat Drag Reliability
+- Fixed ops-board booking window filtering to compare parsed datetimes (`datetime(...)`) instead of raw timestamp strings, so mixed-offset `start_time_local` values remain queryable.
+- Added persisted ops placement metadata in booking participant fields:
+  - `Ops Lane`
+  - `Ops Slot`
+- Updated ops-board load mapping to restore lane/slot from those fields so moved bookings stay on the correct aircraft/rail after reload.
+- Enabled drag/move for combined movement markers and save all grouped bookings together on drop.
+- Fixed seat-modal passenger drag payload to use passenger key (`paxKey`) for in-modal seat/swap/unseat drops.
+- Updated seat-modal behavior for drag-out to board:
+  - modal no longer closes immediately on pickup
+  - modal closes after successful board drop save from seat-modal passenger drag source.
+
 ## 2026-03-07
 ### Ops Board Day Pool + DayVFR Timeline Controls
 - Added ops-board configuration settings under `/configuration`:

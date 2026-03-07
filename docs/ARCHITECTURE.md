@@ -11,6 +11,9 @@ FlightOpsNXG is a Node/TypeScript monorepo for flight-ops workflows with:
 - `apps/cloudflare-worker`
   - Cloudflare Worker API replacement for Node services
   - D1-backed storage for bookings
+  - ops-board persistence notes:
+    - booking participant fields `Ops Lane` and `Ops Slot` are used to persist aircraft lane + rail placement across reloads
+    - booking range reads compare `datetime(start_time_local)` so mixed offsets (`Z`, `+13:00`, etc.) filter correctly
   - routes:
     - `GET /healthz`
     - `GET /sync/rezdy/bookings`

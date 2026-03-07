@@ -8,6 +8,8 @@ type CanonicalBooking = {
   productCode: string;
   status: "confirmed" | "pending" | "cancelled";
   startTimeIso: string;
+  laneIndex?: number;
+  slotHint?: number;
   passengers: Array<{
     id: string;
     firstName: string;
@@ -1090,6 +1092,9 @@ const opsBoardHtml = `<!doctype html>
     .modal-backdrop { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.45); display: none; align-items: center; justify-content: center; z-index: 3000; }
     .modal-backdrop.open { display: flex; }
     .modal-card { width: fit-content; max-width: 94vw; max-height: 90vh; overflow: auto; background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; position: relative; }
+    /* Keep seat drag/drop working in-modal while still allowing drag-out to board lanes behind the backdrop. */
+    #seatModal { pointer-events: none; }
+    #seatModal .modal-card { pointer-events: auto; }
     .modal-close { position: absolute; right: 10px; top: 10px; width: 32px; height: 32px; border-radius: 8px; border: 1px solid #c8d5e7; background: #ecf3ff; color: #11438d; cursor: pointer; }
     .seat-wrap { display: grid; gap: 12px; grid-template-columns: max-content minmax(110px, 150px); align-items: start; }
     .seat-grid { display: grid; gap: 8px; }
@@ -1705,17 +1710,17 @@ function attachPassengerChipHandlers(chip, passenger) {
   }
 
   chip.addEventListener("dragstart", (e) => {
+    const paxKey = String(passenger?.paxKey || "");
     const payload = {
       bookingId: passenger.bookingId,
+      paxKey: paxKey,
       source: "seat-modal-passenger",
       grabOffsetPx: 0,
       anchorToDraggedLeftPx: 0
     };
     e.dataTransfer.setData("application/json", JSON.stringify(payload));
-    e.dataTransfer.setData("text/plain", String(passenger.bookingId || ""));
+    e.dataTransfer.setData("text/plain", paxKey);
     e.dataTransfer.effectAllowed = "move";
-    // Close modal after drag starts so board lanes can receive the drop.
-    setTimeout(() => closeSeatModal(), 0);
   });
 
   chip.addEventListener("dblclick", (e) => {
@@ -1787,10 +1792,14 @@ function slotFromClientY(lane, clientY) {
 }
 
 async function applyDropMove(lane, clientX, clientY, dragPayload, fallbackBookingId) {
-  const bookingId = dragPayload?.bookingId || fallbackBookingId;
-  if (!bookingId) return;
-  const booking = model.bookings.find((b) => b.id === bookingId);
-  if (!booking) return;
+  const payloadIds = Array.isArray(dragPayload?.bookingIds)
+    ? dragPayload.bookingIds.filter((id) => typeof id === "string" && id)
+    : [];
+  const fallbackId = dragPayload?.bookingId || fallbackBookingId;
+  const bookingIds = payloadIds.length ? payloadIds : (fallbackId ? [fallbackId] : []);
+  if (!bookingIds.length) return;
+  const bookingsToMove = model.bookings.filter((b) => bookingIds.includes(b.id));
+  if (!bookingsToMove.length) return;
   const rect = lane.getBoundingClientRect();
   const grabOffsetPx = Number(dragPayload?.grabOffsetPx ?? 0);
   const anchorToDraggedLeftPx = Number(dragPayload?.anchorToDraggedLeftPx ?? 0);
@@ -1802,62 +1811,90 @@ async function applyDropMove(lane, clientX, clientY, dragPayload, fallbackBookin
   const newLaneIndex = Number(lane.dataset.laneIndex);
   const newSlotHint = slotFromClientY(lane, clientY);
 
-  const oldStartMs = booking.startMs;
-  const oldLaneIndex = booking.laneIndex;
-  const oldSlotHint = booking.slotHint;
-  booking.startMs = newStartMs;
-  booking.laneIndex = newLaneIndex;
-  booking.slotHint = newSlotHint;
+  const oldStateById = new Map();
+  bookingsToMove.forEach((booking) => {
+    oldStateById.set(booking.id, {
+      startMs: booking.startMs,
+      laneIndex: booking.laneIndex,
+      slotHint: booking.slotHint
+    });
+    booking.startMs = newStartMs;
+    booking.laneIndex = newLaneIndex;
+    booking.slotHint = newSlotHint;
+  });
   renderBoard();
 
   try {
-    statusEl.textContent = "Saving move for " + booking.id + "...";
-    const existingRes = await fetch("/v1/bookings/" + encodeURIComponent(booking.id));
-    const existingData = await existingRes.json();
-    if (!existingRes.ok || existingData.requestStatus !== "SUCCESS" || !existingData.booking) {
-      throw new Error("Failed to read booking for update.");
-    }
-    const fullBooking = existingData.booking;
-    if (!Array.isArray(fullBooking.items) || fullBooking.items.length === 0) {
-      throw new Error("Booking has no items to update.");
-    }
-    const oldStartLocal = String(fullBooking.items[0].startTimeLocal ?? "");
-    const offsetMinutes = parseOffsetMinutes(oldStartLocal);
-    fullBooking.items[0].startTimeLocal = toIsoWithOffset(newStartMs, offsetMinutes);
+    statusEl.textContent = "Saving move for " + bookingsToMove.length + " booking(s)...";
+    for (const booking of bookingsToMove) {
+      const existingRes = await fetch("/v1/bookings/" + encodeURIComponent(booking.id));
+      const existingData = await existingRes.json();
+      if (!existingRes.ok || existingData.requestStatus !== "SUCCESS" || !existingData.booking) {
+        throw new Error("Failed to read booking for update.");
+      }
+      const fullBooking = existingData.booking;
+      if (!Array.isArray(fullBooking.items) || fullBooking.items.length === 0) {
+        throw new Error("Booking has no items to update.");
+      }
+      const oldStartLocal = String(fullBooking.items[0].startTimeLocal ?? "");
+      const offsetMinutes = parseOffsetMinutes(oldStartLocal);
+      fullBooking.items[0].startTimeLocal = toIsoWithOffset(newStartMs, offsetMinutes);
+      const participants = Array.isArray(fullBooking.items[0].participants) ? fullBooking.items[0].participants : [];
+      participants.forEach((pt) => {
+        const fields = Array.isArray(pt.fields) ? pt.fields : (pt.fields = []);
+        upsertField(fields, "Ops Lane", String(newLaneIndex));
+        upsertField(fields, "Ops Slot", String(newSlotHint));
+      });
 
-    const saveRes = await fetch("/admin/bookings/" + encodeURIComponent(booking.id), {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(fullBooking)
-    });
-    const saveData = await saveRes.json();
-    if (!saveRes.ok || !saveData.ok) {
-      throw new Error(saveData.error || "Failed to persist booking update.");
+      const saveRes = await fetch("/admin/bookings/" + encodeURIComponent(booking.id), {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(fullBooking)
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok || !saveData.ok) {
+        throw new Error(saveData.error || "Failed to persist booking update.");
+      }
     }
 
-    statusEl.textContent = "Moved " + booking.id + " to " + aircraft[booking.laneIndex] + " at " + new Date(booking.startMs).toLocaleString("en-NZ", { hour12: false }) + " (snapped to 30 min).";
+    if (bookingsToMove.length === 1) {
+      const moved = bookingsToMove[0];
+      statusEl.textContent = "Moved " + moved.id + " to " + aircraft[moved.laneIndex] + " at " + new Date(moved.startMs).toLocaleString("en-NZ", { hour12: false }) + " (snapped to 30 min).";
+    } else {
+      statusEl.textContent = "Moved " + bookingsToMove.length + " combined bookings to " + aircraft[newLaneIndex] + " at " + new Date(newStartMs).toLocaleString("en-NZ", { hour12: false }) + " (snapped to 30 min).";
+    }
+    if (dragPayload?.source === "seat-modal-passenger") {
+      closeSeatModal();
+    }
   } catch (err) {
-    booking.startMs = oldStartMs;
-    booking.laneIndex = oldLaneIndex;
-    booking.slotHint = oldSlotHint;
+    bookingsToMove.forEach((booking) => {
+      const old = oldStateById.get(booking.id);
+      if (!old) return;
+      booking.startMs = old.startMs;
+      booking.laneIndex = old.laneIndex;
+      booking.slotHint = old.slotHint;
+    });
     renderBoard();
     statusEl.textContent = (err && err.message) ? err.message : "Failed to save move.";
   }
 }
 
-function attachDragBehavior(seg, booking, segmentType, draggedLeftPx, anchorLeftPx) {
+function attachDragBehavior(seg, movement, segmentType, draggedLeftPx, anchorLeftPx) {
+  const firstBookingId = movement.bookingIds?.[0] || "";
+  const bookingIds = Array.isArray(movement.bookingIds) ? movement.bookingIds.slice() : (firstBookingId ? [firstBookingId] : []);
   seg.draggable = true;
   seg.addEventListener("dragstart", (e) => {
     const rect = seg.getBoundingClientRect();
     const rawGrabOffset = e.clientX - rect.left;
     const payload = {
-      bookingId: booking.id,
+      bookingId: firstBookingId,
+      bookingIds: bookingIds,
       segmentType,
       grabOffsetPx: clamp(rawGrabOffset, 0, rect.width),
       anchorToDraggedLeftPx: draggedLeftPx - anchorLeftPx
     };
     e.dataTransfer.setData("application/json", JSON.stringify(payload));
-    e.dataTransfer.setData("text/plain", booking.id);
+    e.dataTransfer.setData("text/plain", firstBookingId);
     e.dataTransfer.effectAllowed = "move";
   });
 
@@ -1867,7 +1904,8 @@ function attachDragBehavior(seg, booking, segmentType, draggedLeftPx, anchorLeft
     const rect = seg.getBoundingClientRect();
     pointerDrag = {
       pointerId: e.pointerId,
-      bookingId: booking.id,
+      bookingId: firstBookingId,
+      bookingIds: bookingIds,
       segmentType,
       grabOffsetPx: clamp(e.clientX - rect.left, 0, rect.width),
       anchorToDraggedLeftPx: draggedLeftPx - anchorLeftPx,
@@ -2026,14 +2064,8 @@ function addSegment(lane, movement, startMin, durationMin, topPx, text, invalid 
   if (type !== "ground") seg.style.top = topPx + "px";
   seg.textContent = text;
   seg.addEventListener("click", () => openSeatModal(movement.id));
-  if (movement.bookingIds.length === 1) {
-    const booking = model.bookings.find((b) => b.id === movement.bookingIds[0]);
-    if (booking) {
-      const layout = getBookingLayout(booking);
-      const anchorLeftPx = type === "outbound" ? layout.outLeftPx : layout.inLeftPx;
-      attachDragBehavior(seg, booking, type, leftPx, anchorLeftPx);
-    }
-  }
+  const anchorLeftPx = toPx(movement.startMin);
+  attachDragBehavior(seg, movement, type, leftPx, anchorLeftPx);
   lane.appendChild(seg);
 }
 
@@ -2090,13 +2122,8 @@ function addGroundSegmentPx(lane, movement, leftPx, widthPx, topPx, text) {
   seg.style.width = Math.max(30, widthPx) + "px";
   seg.textContent = text;
   seg.addEventListener("click", () => openSeatModal(movement.id));
-  if (movement.bookingIds.length === 1) {
-    const booking = model.bookings.find((b) => b.id === movement.bookingIds[0]);
-    if (booking) {
-      const layout = getBookingLayout(booking);
-      attachDragBehavior(seg, booking, "ground", leftPx, layout.inLeftPx);
-    }
-  }
+  const anchorLeftPx = toPx(movement.startMin);
+  attachDragBehavior(seg, movement, "ground", leftPx, anchorLeftPx);
   lane.appendChild(seg);
 }
 
@@ -2244,7 +2271,12 @@ async function loadBoard() {
     pax: b.passengers.length,
     passengers: b.passengers,
     startMs: new Date(b.startTimeIso).getTime(),
-    laneIndex: i % aircraft.length
+    laneIndex: (typeof b.laneIndex === "number" && Number.isFinite(b.laneIndex))
+      ? ((Math.trunc(b.laneIndex) % aircraft.length) + aircraft.length) % aircraft.length
+      : (i % aircraft.length),
+    slotHint: (typeof b.slotHint === "number" && Number.isFinite(b.slotHint))
+      ? clamp(Math.trunc(b.slotHint), 0, maxRowSlots - 1)
+      : undefined
   }));
   renderBoard();
   renderDayPool();
@@ -2319,6 +2351,14 @@ function normalizeStatus(status: string): CanonicalBooking["status"] {
   return "pending";
 }
 
+function parseOpsFieldInt(booking: SeedBooking, label: string): number | undefined {
+  const firstParticipant = booking.items?.[0]?.participants?.[0];
+  const raw = firstParticipant?.fields?.find((x: { label: string; value: string }) => x.label === label)?.value;
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : undefined;
+}
+
 function mapBooking(booking: SeedBooking): CanonicalBooking {
   const firstItem = booking.items[0];
   const passengers = firstItem.participants.map((participant: SeedParticipant, index: number) => {
@@ -2334,6 +2374,8 @@ function mapBooking(booking: SeedBooking): CanonicalBooking {
     productCode: firstItem.productCode,
     status: normalizeStatus(booking.status),
     startTimeIso: new Date(firstItem.startTimeLocal).toISOString(),
+    laneIndex: parseOpsFieldInt(booking, "Ops Lane"),
+    slotHint: parseOpsFieldInt(booking, "Ops Slot"),
     passengers
   };
 }
@@ -2369,9 +2411,9 @@ async function listRowsByStartWindow(db: D1Database, minIso: string | null, maxI
     .prepare(
       `SELECT order_number, status, supplier_id, product_code, start_time_local, payload_json
        FROM bookings
-       WHERE (?1 IS NULL OR start_time_local >= ?1)
-         AND (?2 IS NULL OR start_time_local <= ?2)
-       ORDER BY start_time_local ASC`
+       WHERE (?1 IS NULL OR datetime(start_time_local) >= datetime(?1))
+         AND (?2 IS NULL OR datetime(start_time_local) <= datetime(?2))
+       ORDER BY datetime(start_time_local) ASC`
     )
     .bind(minIso, maxIso)
     .all<BookingRow>();
