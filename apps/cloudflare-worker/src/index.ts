@@ -1028,13 +1028,25 @@ const opsBoardHtml = `<!doctype html>
     .lane-label { position: absolute; left: 8px; top: 8px; font-size: .85rem; color: #4f6480; font-weight: 700; }
     .tick { position: absolute; top: 0; bottom: 0; border-left: 1px dashed #d7e1ee; }
     .tick-label { position: absolute; top: 2px; left: 2px; font-size: .72rem; color: #8aa0bc; }
-    .segment { position: absolute; z-index: 2; border-radius: 6px; color: #fff; font-size: .76rem; line-height: 22px; height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; user-select: none; touch-action: none; }
-    .segment:active { cursor: grabbing; }
+    .segment { position: absolute; z-index: 2; border-radius: 6px; color: #fff; font-size: .76rem; line-height: 22px; height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; user-select: none; touch-action: none; }
     .inbound { background: #0f62fe; }
     .outbound { background: #025783; }
     .ground { position: absolute; z-index: 1; height: 14px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .68rem; line-height: 14px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px; overflow: hidden; white-space: nowrap; cursor: grab; user-select: none; touch-action: none; }
     .drop-target { outline: 2px solid #60a5fa; outline-offset: -2px; }
     .dragging { opacity: .85; }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.45); display: none; align-items: center; justify-content: center; z-index: 3000; }
+    .modal-backdrop.open { display: flex; }
+    .modal-card { width: fit-content; max-width: 94vw; max-height: 90vh; overflow: auto; background: #fff; border: 1px solid #d7e1ee; border-radius: 12px; padding: 14px; position: relative; }
+    .modal-close { position: absolute; right: 10px; top: 10px; width: 32px; height: 32px; border-radius: 8px; border: 1px solid #c8d5e7; background: #ecf3ff; color: #11438d; cursor: pointer; }
+    .seat-wrap { display: grid; gap: 12px; grid-template-columns: max-content minmax(110px, 150px); align-items: start; }
+    .seat-grid { display: grid; gap: 8px; }
+    .seat-row { display: grid; gap: 8px; align-items: center; justify-content: start; width: fit-content; }
+    .seat { min-height: 52px; border: 1px solid #c8d5e7; border-radius: 8px; background: #f8fbff; padding: 6px; display: grid; gap: 4px; align-content: start; }
+    .seat-label { font-size: .72rem; color: #4f6480; font-weight: 700; display: block; }
+    .pax-chip { border: 1px solid #a9c0e4; border-radius: 999px; background: #ecf3ff; color: #11438d; font-size: .74rem; font-weight: 700; line-height: 20px; height: 20px; padding: 0 8px; cursor: grab; width: fit-content; }
+    .pilot-chip { border: 1px solid #8fbba5; border-radius: 999px; background: #dcfce7; color: #166534; font-size: .74rem; font-weight: 700; line-height: 20px; height: 20px; padding: 0 8px; width: fit-content; }
+    .pool { border: 1px dashed #c8d5e7; border-radius: 8px; padding: 8px; min-height: 52px; display: flex; gap: 6px; flex-wrap: wrap; align-content: flex-start; background: #fff; }
+    .drag-over { outline: 2px solid #60a5fa; outline-offset: -2px; }
   </style>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
@@ -1070,6 +1082,20 @@ const opsBoardHtml = `<!doctype html>
     <div id="status">Choose a view/day and load board.</div>
     <div class="board" id="board"></div>
   </section>
+  <div id="seatModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Seat map">
+      <button id="seatModalClose" class="modal-close" aria-label="Close">X</button>
+      <h2 id="seatModalTitle" style="margin:0 40px 8px 0;">Seat map</h2>
+      <div id="seatModalMeta" style="color:#4f6480; margin-bottom:10px;"></div>
+      <div class="seat-wrap">
+        <div id="seatGrid" class="seat-grid"></div>
+        <div>
+          <div style="font-weight:700; margin-bottom:6px;">Unseated</div>
+          <div id="seatPool" class="pool"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </main>
 <script>
 const viewModeEl = document.getElementById("viewMode");
@@ -1080,6 +1106,12 @@ const todayBtn = document.getElementById("todayBtn");
 const loadBtn = document.getElementById("loadBtn");
 const boardEl = document.getElementById("board");
 const statusEl = document.getElementById("status");
+const seatModalEl = document.getElementById("seatModal");
+const seatModalCloseEl = document.getElementById("seatModalClose");
+const seatModalTitleEl = document.getElementById("seatModalTitle");
+const seatModalMetaEl = document.getElementById("seatModalMeta");
+const seatGridEl = document.getElementById("seatGrid");
+const seatPoolEl = document.getElementById("seatPool");
 
 const aircraft = ["C208 Alpha", "C208 Beta", "GA8", "BN2"];
 const inboundMin = 45;
@@ -1097,11 +1129,17 @@ let model = { startMs: 0, endMs: 0, totalMin: 1440, bookings: [] };
 let currentDropLane = null;
 let pointerDrag = null;
 let suppressClickUntilMs = 0;
+let movementMap = new Map();
+const seatAssignments = {};
+let activeMovementId = null;
+let seatSaveTimer = null;
+const pendingSeatSaveIds = new Set();
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function dateToYmd(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function minutesBetween(a, b) { return Math.floor((b - a) / 60000); }
+function initials(p) { return ((p.firstName?.[0] || "?") + (p.lastName?.[0] || "?")).toUpperCase(); }
 
 function parseAnchorDate() {
   const value = anchorInputEl.value;
@@ -1157,6 +1195,279 @@ function getBookingLayout(booking) {
     groundLeftPx,
     groundWidthPx: groundRightPx - groundLeftPx
   };
+}
+
+function movementStartMs(booking, type) {
+  return type === "outbound" ? booking.startMs + (gapMin * 60000) : booking.startMs;
+}
+
+function movementId(laneIndex, type, startMs) {
+  return laneIndex + ":" + type + ":" + startMs;
+}
+
+function seatFieldLabelForMovement(type) {
+  return type === "inbound" ? "Seat In" : "Seat Out";
+}
+
+function fieldValue(fields, label) {
+  const f = (fields || []).find((x) => x.label === label);
+  return f ? String(f.value || "") : "";
+}
+
+function upsertField(fields, label, value) {
+  const current = (fields || []).find((x) => x.label === label);
+  if (current) current.value = value;
+  else (fields || []).push({ label, value });
+}
+
+function aircraftType(name) {
+  if (name.startsWith("C208")) return "C208";
+  if (name.startsWith("GA8")) return "GA8";
+  return "BN2";
+}
+
+function seatLayoutForAircraft(name) {
+  const type = aircraftType(name);
+  if (type === "C208") {
+    // NZ C208B: pilot + copilot seats up front, then 12 passenger seats behind.
+    // Copilot seat is passenger-usable in this model; every seat is treated as window.
+    return [
+      ["PILOT", "COPILOT"],
+      ["1A", "1B"],
+      ["2A", "2B"],
+      ["3A", "3B"],
+      ["4A", "4B"],
+      ["5A", "5B"],
+      ["6A", "6B"]
+    ];
+  }
+  return [
+    ["1A", "1B"],
+    ["2A", "2B"],
+    ["3A", "3B"],
+    ["4A", "4B"]
+  ];
+}
+
+function ensureSeatAssignment(movement) {
+  if (!seatAssignments[movement.id]) seatAssignments[movement.id] = {};
+  return seatAssignments[movement.id];
+}
+
+async function hydrateSeatAssignments(movement) {
+  if (!movement) return;
+  const assign = ensureSeatAssignment(movement);
+  const label = seatFieldLabelForMovement(movement.type);
+  for (const bookingId of movement.bookingIds) {
+    try {
+      const res = await fetch("/v1/bookings/" + encodeURIComponent(bookingId));
+      const data = await res.json();
+      if (!res.ok || data.requestStatus !== "SUCCESS" || !data.booking) continue;
+      const participants = data.booking?.items?.[0]?.participants || [];
+      participants.forEach((pt, idx) => {
+        const barcode = fieldValue(pt.fields || [], "Barcode") || (bookingId + "-" + (idx + 1));
+        const key = bookingId + "::" + barcode;
+        const seat = fieldValue(pt.fields || [], label).trim();
+        if (seat) assign[key] = seat;
+      });
+    } catch (_) {}
+  }
+}
+
+async function persistSeatAssignments(movement) {
+  if (!movement) return;
+  const assign = ensureSeatAssignment(movement);
+  const label = seatFieldLabelForMovement(movement.type);
+  for (const bookingId of movement.bookingIds) {
+    const res = await fetch("/v1/bookings/" + encodeURIComponent(bookingId));
+    const data = await res.json();
+    if (!res.ok || data.requestStatus !== "SUCCESS" || !data.booking) throw new Error("Failed to load booking " + bookingId + " for seat save.");
+    const full = data.booking;
+    const participants = full?.items?.[0]?.participants || [];
+    participants.forEach((pt, idx) => {
+      const fields = pt.fields || (pt.fields = []);
+      const barcode = fieldValue(fields, "Barcode") || (bookingId + "-" + (idx + 1));
+      const key = bookingId + "::" + barcode;
+      const seat = assign[key] || "";
+      upsertField(fields, label, seat);
+    });
+    const saveRes = await fetch("/admin/bookings/" + encodeURIComponent(bookingId), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(full)
+    });
+    const saveData = await saveRes.json();
+    if (!saveRes.ok || !saveData.ok) throw new Error(saveData.error || ("Failed to save seat map for " + bookingId + "."));
+  }
+}
+
+function queueSeatPersist() {
+  if (!activeMovementId) return;
+  pendingSeatSaveIds.add(activeMovementId);
+  queueSeatPersistByIds([]);
+}
+
+function queueSeatPersistByIds(ids) {
+  ids.forEach((id) => { if (id) pendingSeatSaveIds.add(id); });
+  if (pendingSeatSaveIds.size === 0) return;
+  if (seatSaveTimer) clearTimeout(seatSaveTimer);
+  seatSaveTimer = setTimeout(async () => {
+    const idsToSave = Array.from(pendingSeatSaveIds);
+    pendingSeatSaveIds.clear();
+    try {
+      statusEl.textContent = "Saving seat assignments...";
+      for (const id of idsToSave) {
+        const movement = movementMap.get(id);
+        if (!movement) continue;
+        await persistSeatAssignments(movement);
+      }
+      statusEl.textContent = "Seat assignments saved.";
+    } catch (e) {
+      statusEl.textContent = (e && e.message) ? e.message : "Failed to save seat assignments.";
+    }
+  }, 250);
+}
+
+async function ensureMovementHydrated(movement) {
+  if (!movement) return;
+  if (movement._hydrated) return;
+  await hydrateSeatAssignments(movement);
+  movement._hydrated = true;
+}
+
+function findCounterpartMovement(movement) {
+  if (!movement) return null;
+  const otherType = movement.type === "inbound" ? "outbound" : "inbound";
+  const otherStart = movement.type === "inbound"
+    ? (movement.startMs + (gapMin * 60000))
+    : (movement.startMs - (gapMin * 60000));
+  const id = movementId(movement.laneIndex, otherType, otherStart);
+  return movementMap.get(id) || null;
+}
+
+function isSeatFree(assign, seatId, ignorePaxId) {
+  return !Object.keys(assign).some((id) => id !== ignorePaxId && assign[id] === seatId);
+}
+
+async function tryMirrorSeatToCounterpart(movement, paxId, seatId) {
+  if (!movement || !seatId) return null;
+  const counterpart = findCounterpartMovement(movement);
+  if (!counterpart) return null;
+  await ensureMovementHydrated(counterpart);
+  const existsInCounterpart = counterpart.passengers.some((p) => p.paxKey === paxId);
+  if (!existsInCounterpart) return null;
+  const counterAssign = ensureSeatAssignment(counterpart);
+  if (!isSeatFree(counterAssign, seatId, paxId)) return null;
+  counterAssign[paxId] = seatId;
+  return counterpart.id;
+}
+
+function clearDragHighlights() {
+  Array.from(document.querySelectorAll(".drag-over")).forEach((el) => el.classList.remove("drag-over"));
+}
+
+function renderSeatModal() {
+  if (!activeMovementId) return;
+  const movement = movementMap.get(activeMovementId);
+  if (!movement) return;
+  const assign = ensureSeatAssignment(movement);
+  const paxById = new Map(movement.passengers.map((p) => [p.paxKey, p]));
+  const assignedIds = new Set(Object.keys(assign));
+  const seats = seatLayoutForAircraft(movement.aircraftName);
+
+  seatModalTitleEl.textContent = movement.aircraftName + " " + (movement.type === "inbound" ? "In" : "Out") + " Seat Map";
+  seatModalMetaEl.textContent = "Departure: " + new Date(movement.startMs).toLocaleString("en-NZ", { hour12: false }) + " · Passengers: " + movement.passengers.length;
+  seatGridEl.innerHTML = "";
+  seatPoolEl.innerHTML = "";
+
+  function dropTargetHandlers(el, seatId) {
+    el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("drag-over"); });
+    el.addEventListener("dragleave", () => el.classList.remove("drag-over"));
+    el.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      el.classList.remove("drag-over");
+      if (seatId === "PILOT") return;
+      const paxId = e.dataTransfer.getData("text/plain");
+      if (!paxById.has(paxId)) return;
+      const sourceSeat = assign[paxId] || null;
+      if (seatId) {
+        const targetPax = Object.keys(assign).find((id) => assign[id] === seatId);
+        if (sourceSeat === seatId) return;
+        if (targetPax && targetPax !== paxId) {
+          if (sourceSeat) assign[targetPax] = sourceSeat;
+          else delete assign[targetPax];
+        }
+        assign[paxId] = seatId;
+        const mirroredId = await tryMirrorSeatToCounterpart(movement, paxId, seatId);
+        if (mirroredId) queueSeatPersistByIds([movement.id, mirroredId]);
+        else queueSeatPersistByIds([movement.id]);
+      } else {
+        delete assign[paxId];
+        queueSeatPersistByIds([movement.id]);
+      }
+      renderSeatModal();
+    });
+  }
+
+  seats.forEach((row) => {
+    const rowEl = document.createElement("div");
+    rowEl.className = "seat-row";
+    rowEl.style.gridTemplateColumns = "repeat(" + Math.max(1, row.length) + ", 72px)";
+    row.forEach((seatId) => {
+      const seatEl = document.createElement("div");
+      seatEl.className = "seat";
+      seatEl.innerHTML = "<div class='seat-label'>" + seatId + "</div>";
+      if (seatId === "PILOT") {
+        const pilot = document.createElement("div");
+        pilot.className = "pilot-chip";
+        pilot.textContent = "PT";
+        pilot.title = "Pilot";
+        seatEl.appendChild(pilot);
+      } else {
+        const paxId = Object.keys(assign).find((id) => assign[id] === seatId);
+        if (paxId && paxById.has(paxId)) {
+          const chip = document.createElement("div");
+          chip.className = "pax-chip";
+          chip.draggable = true;
+          chip.textContent = initials(paxById.get(paxId));
+          chip.title = paxById.get(paxId).firstName + " " + paxById.get(paxId).lastName;
+          chip.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", paxId));
+          seatEl.appendChild(chip);
+        }
+        dropTargetHandlers(seatEl, seatId);
+      }
+      rowEl.appendChild(seatEl);
+    });
+    seatGridEl.appendChild(rowEl);
+  });
+
+  movement.passengers.forEach((p) => {
+    if (assignedIds.has(p.paxKey)) return;
+    const chip = document.createElement("div");
+    chip.className = "pax-chip";
+    chip.draggable = true;
+    chip.textContent = initials(p);
+    chip.title = p.firstName + " " + p.lastName;
+    chip.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", p.paxKey));
+    seatPoolEl.appendChild(chip);
+  });
+  dropTargetHandlers(seatPoolEl, null);
+}
+
+async function openSeatModal(movementIdValue) {
+  activeMovementId = movementIdValue;
+  const movement = movementMap.get(movementIdValue);
+  await ensureMovementHydrated(movement);
+  renderSeatModal();
+  seatModalEl.classList.add("open");
+  seatModalEl.setAttribute("aria-hidden", "false");
+}
+
+function closeSeatModal() {
+  activeMovementId = null;
+  clearDragHighlights();
+  seatModalEl.classList.remove("open");
+  seatModalEl.setAttribute("aria-hidden", "true");
 }
 
 function clampPx(px) {
@@ -1403,31 +1714,42 @@ function laneElement(name, laneIndex) {
   return lane;
 }
 
-function addSegment(lane, booking, type, startMin, durationMin, topPx, text) {
-  const seg = document.createElement("a");
+function addSegment(lane, movement, startMin, durationMin, topPx, text) {
+  const seg = document.createElement("div");
+  const type = movement.type;
   seg.className = type === "ground" ? "ground" : ("segment " + type);
   const leftPx = toPx(startMin);
   seg.style.left = leftPx + "px";
   seg.style.width = segmentWidthPx(durationMin) + "px";
   if (type !== "ground") seg.style.top = topPx + "px";
   seg.textContent = text;
-  seg.href = "/booking-edit?id=" + encodeURIComponent(booking.id);
-  const layout = getBookingLayout(booking);
-  const anchorLeftPx = type === "outbound" ? layout.outLeftPx : layout.inLeftPx;
-  attachDragBehavior(seg, booking, type, leftPx, anchorLeftPx);
+  seg.addEventListener("click", () => openSeatModal(movement.id));
+  if (movement.bookingIds.length === 1) {
+    const booking = model.bookings.find((b) => b.id === movement.bookingIds[0]);
+    if (booking) {
+      const layout = getBookingLayout(booking);
+      const anchorLeftPx = type === "outbound" ? layout.outLeftPx : layout.inLeftPx;
+      attachDragBehavior(seg, booking, type, leftPx, anchorLeftPx);
+    }
+  }
   lane.appendChild(seg);
 }
 
-function addGroundSegmentPx(lane, booking, leftPx, widthPx, topPx, text) {
-  const seg = document.createElement("a");
+function addGroundSegmentPx(lane, movement, leftPx, widthPx, topPx, text) {
+  const seg = document.createElement("div");
   seg.className = "ground";
   seg.style.left = leftPx + "px";
   seg.style.top = topPx + "px";
   seg.style.width = Math.max(30, widthPx) + "px";
   seg.textContent = text;
-  seg.href = "/booking-edit?id=" + encodeURIComponent(booking.id);
-  const layout = getBookingLayout(booking);
-  attachDragBehavior(seg, booking, "ground", leftPx, layout.inLeftPx);
+  seg.addEventListener("click", () => openSeatModal(movement.id));
+  if (movement.bookingIds.length === 1) {
+    const booking = model.bookings.find((b) => b.id === movement.bookingIds[0]);
+    if (booking) {
+      const layout = getBookingLayout(booking);
+      attachDragBehavior(seg, booking, "ground", leftPx, layout.inLeftPx);
+    }
+  }
   lane.appendChild(seg);
 }
 
@@ -1452,6 +1774,7 @@ function slotForBookings(bookingsInLane) {
 
 function renderBoard() {
   clearDropLane();
+  movementMap = new Map();
   boardEl.innerHTML = "";
   const lanes = aircraft.map((name, idx) => {
     const lane = laneElement(name, idx);
@@ -1467,14 +1790,66 @@ function renderBoard() {
   bookingsByLane.forEach((laneBookings, laneIndex) => {
     const lane = lanes[laneIndex];
     const slotMap = slotForBookings(laneBookings);
+    const movementById = new Map();
+    const renderedGround = new Set();
+
+    laneBookings.forEach((b) => {
+      ["inbound", "outbound"].forEach((type) => {
+        const startMs = movementStartMs(b, type);
+        const id = movementId(laneIndex, type, startMs);
+        if (!movementById.has(id)) {
+          movementById.set(id, {
+            id,
+            laneIndex,
+            aircraftName: aircraft[laneIndex],
+            type,
+            startMs,
+            startMin: minutesBetween(model.startMs, startMs),
+            durationMin: type === "inbound" ? inboundMin : outboundMin,
+            bookingIds: [],
+            passengers: []
+          });
+        }
+        const m = movementById.get(id);
+        m.bookingIds.push(b.id);
+        b.passengers.forEach((p) => {
+          const paxKey = b.id + "::" + p.id;
+          if (!m.passengers.some((x) => x.paxKey === paxKey)) {
+            m.passengers.push({
+              paxKey,
+              bookingId: b.id,
+              paxId: p.id,
+              firstName: p.firstName,
+              lastName: p.lastName
+            });
+          }
+        });
+      });
+    });
+
     laneBookings.forEach((b) => {
       const slot = slotMap.get(b.id) ?? 0;
       const segmentTop = firstSlotTopPx + (slot * slotHeightPx);
       const groundTop = segmentTop + groundOffsetPx;
       const layout = getBookingLayout(b);
-      addSegment(lane, b, "inbound", layout.startMin, inboundMin, segmentTop, b.productCode + " · " + b.id + " · " + b.pax + " pax");
-      addGroundSegmentPx(lane, b, layout.groundLeftPx, layout.groundWidthPx, groundTop, "Ground activity");
-      addSegment(lane, b, "outbound", layout.outMin, outboundMin, segmentTop, b.productCode + " · " + b.id);
+      const inId = movementId(laneIndex, "inbound", movementStartMs(b, "inbound"));
+      const outId = movementId(laneIndex, "outbound", movementStartMs(b, "outbound"));
+      const inMovement = movementById.get(inId);
+      const outMovement = movementById.get(outId);
+      movementMap.set(inId, inMovement);
+      movementMap.set(outId, outMovement);
+      if (inMovement && inMovement._rendered !== true) {
+        addSegment(lane, inMovement, inMovement.startMin, inMovement.durationMin, segmentTop, "In · " + inMovement.passengers.length + " pax");
+        inMovement._rendered = true;
+      }
+      if (inMovement && !renderedGround.has(inId)) {
+        addGroundSegmentPx(lane, inMovement, layout.groundLeftPx, layout.groundWidthPx, groundTop, "Ground activity");
+        renderedGround.add(inId);
+      }
+      if (outMovement && outMovement._rendered !== true) {
+        addSegment(lane, outMovement, outMovement.startMin, outMovement.durationMin, segmentTop, "Out · " + outMovement.passengers.length + " pax");
+        outMovement._rendered = true;
+      }
     });
   });
 }
@@ -1496,6 +1871,7 @@ async function loadBoard() {
     id: b.supplierBookingId,
     productCode: b.productCode,
     pax: b.passengers.length,
+    passengers: b.passengers,
     startMs: new Date(b.startTimeIso).getTime(),
     laneIndex: i % aircraft.length
   }));
@@ -1526,6 +1902,9 @@ function moveAnchor(delta) {
   prevBtn.addEventListener("click", () => { moveAnchor(-1); loadBoard().catch((e) => statusEl.textContent = e.message || "Error"); });
   nextBtn.addEventListener("click", () => { moveAnchor(1); loadBoard().catch((e) => statusEl.textContent = e.message || "Error"); });
   viewModeEl.addEventListener("change", () => loadBoard().catch((e) => statusEl.textContent = e.message || "Error"));
+  seatModalCloseEl.addEventListener("click", closeSeatModal);
+  seatModalEl.addEventListener("click", (e) => { if (e.target === seatModalEl) closeSeatModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSeatModal(); });
   loadBoard().catch((e) => statusEl.textContent = e.message || "Error");
 })();
 </script>

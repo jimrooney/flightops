@@ -1,6 +1,27 @@
 # Build Notes
 
 ## 2026-03-07
+### Ops Board Movement Seat Map + Persistence
+- Shifted ops-board focus from individual passenger booking bars toward movement markers (`In` / `Out`) with marker-click seat-map modal.
+- Added movement seat-map modal UX:
+  - close via top-right `X`
+  - close via click-off backdrop
+  - drag/drop passenger initials across seats and unseated pool
+- Added seat swap behavior:
+  - seat-to-seat drop swaps passengers
+  - unseated-to-occupied seat moves existing occupant back to unseated
+- Added persisted seating fields in booking participant payloads:
+  - `Seat In`
+  - `Seat Out`
+- Added seat hydration from stored participant fields so assignments reload reliably.
+- Added IN/OUT seat mirroring:
+  - assigning a seat on one leg auto-applies same seat on opposite leg when that seat is free.
+- Updated C208 seat model:
+  - `PILOT` fixed seat
+  - `COPILOT` passenger-usable seat
+  - 12 seats behind (`1A/1B` through `6A/6B`)
+- Tightened seat-modal width to content-fit and reduced horizontal whitespace; narrowed unseated column.
+
 ### Ops Board Two-Booking Lane Stacking
 - Updated `/ops-board` lane rendering to support two concurrent bookings per aircraft row.
 - Added per-lane slot assignment by overlap window so bookings auto-stack into two tracks.
