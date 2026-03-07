@@ -1,0 +1,1 @@
+(New-Object Media.SoundPlayer "C:\Home\Projects\Code\flightops\sounds\gotthis.wav").PlaySync()

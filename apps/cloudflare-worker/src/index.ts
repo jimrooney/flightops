@@ -116,6 +116,7 @@ const configurationHtml = `<!doctype html>
     <label class="toggle"><input id="zuluToggleConfig" type="checkbox" /> Use Zulu / UTC on Dashboard</label>
     <div class="actions">
       <button id="resetSeedBtn" class="btn danger" title="Delete current bookings and reinsert default seed">Reset Seed Data</button>
+      <button id="testSoundBtn" class="btn" title="Play browser completion sound">Test Browser Sound</button>
     </div>
     <div id="status">Ready.</div>
   </section>
@@ -124,6 +125,7 @@ const configurationHtml = `<!doctype html>
 const settingsKey = "flightops_dashboard_use_zulu";
 const zuluToggleConfigEl = document.getElementById("zuluToggleConfig");
 const resetSeedBtn = document.getElementById("resetSeedBtn");
+const testSoundBtn = document.getElementById("testSoundBtn");
 const statusEl = document.getElementById("status");
 
 function readZuluSetting() {
@@ -143,6 +145,24 @@ async function resetSeed() {
   statusEl.textContent = "Seed reset. Deleted " + (data.deleted || 0) + ", inserted " + (data.inserted || 0) + ".";
 }
 
+function playCompletionTone() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) throw new Error("Browser audio API not available.");
+  const ctx = new Ctx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(880, ctx.currentTime);
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.26);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.28);
+  setTimeout(() => ctx.close().catch(() => {}), 350);
+}
+
 zuluToggleConfigEl.checked = readZuluSetting();
 zuluToggleConfigEl.addEventListener("change", () => {
   writeZuluSetting(zuluToggleConfigEl.checked);
@@ -151,6 +171,14 @@ zuluToggleConfigEl.addEventListener("change", () => {
     : "Dashboard time mode set to Local time (QT/browser timezone).";
 });
 resetSeedBtn.addEventListener("click", () => { resetSeed().catch((e) => statusEl.textContent = e.message || "Error"); });
+testSoundBtn.addEventListener("click", () => {
+  try {
+    playCompletionTone();
+    statusEl.textContent = "Played browser completion sound.";
+  } catch (e) {
+    statusEl.textContent = (e && e.message) ? e.message : "Failed to play browser sound.";
+  }
+});
 </script>
 </body>
 </html>`;
@@ -318,6 +346,9 @@ const settingsKey = "flightops_dashboard_use_zulu";
 const useZulu = (() => {
   try { return localStorage.getItem(settingsKey) === "1"; } catch (_) { return false; }
 })();
+const publishSignalPollMs = 10000;
+let lastPublishSignalMs = 0;
+let publishSignalArmed = false;
 utcBadgeEl.style.display = useZulu ? "inline-flex" : "none";
 
 function pad(n) { return String(n).padStart(2, "0"); }
@@ -458,6 +489,46 @@ function closeRangeModal() {
   rangeModalEl.setAttribute("aria-hidden", "true");
 }
 
+function playCompletionTone() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return false;
+  const ctx = new Ctx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(880, ctx.currentTime);
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.26);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.28);
+  setTimeout(() => ctx.close().catch(() => {}), 350);
+  return true;
+}
+
+async function pollPublishSignal() {
+  try {
+    const res = await fetch("/admin/publish-signal");
+    const data = await res.json();
+    if (!res.ok || !data.ok) return;
+    const incoming = Number(data.lastPublishedMs || 0);
+    if (!publishSignalArmed) {
+      lastPublishSignalMs = incoming;
+      publishSignalArmed = true;
+      return;
+    }
+    if (incoming > lastPublishSignalMs) {
+      lastPublishSignalMs = incoming;
+      const played = playCompletionTone();
+      statusEl.textContent = played
+        ? "Publish detected. Browser completion sound played."
+        : "Publish detected. Browser audio was blocked or unavailable.";
+    }
+  } catch (_) {}
+}
+
 async function load() {
   const range = readRangeFromControls();
   if (!range) {
@@ -486,6 +557,8 @@ loadBtn.addEventListener("click", () => { load().then(closeRangeModal).catch((e)
 
 setTodayRange();
 load().catch((e) => statusEl.textContent = e.message || "Error");
+pollPublishSignal().catch(() => {});
+setInterval(() => { pollPublishSignal().catch(() => {}); }, publishSignalPollMs);
 </script>
 </body>
 </html>`;
@@ -1578,6 +1651,40 @@ async function reseedAll(db: D1Database): Promise<{ deleted: number; inserted: n
   return { deleted: Number(deleteResult.meta?.changes ?? 0), inserted };
 }
 
+async function ensureAppEventsTable(db: D1Database): Promise<void> {
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS app_events (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`
+  ).run();
+}
+
+async function getPublishSignalMs(db: D1Database): Promise<number> {
+  await ensureAppEventsTable(db);
+  const row = await db
+    .prepare("SELECT value FROM app_events WHERE key = ?1")
+    .bind("last_publish_ms")
+    .first<{ value: string }>();
+  const value = Number(row?.value ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+async function setPublishSignalMs(db: D1Database, value: number): Promise<void> {
+  await ensureAppEventsTable(db);
+  await db
+    .prepare(
+      `INSERT INTO app_events (key, value, updated_at)
+       VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value,
+         updated_at = excluded.updated_at`
+    )
+    .bind("last_publish_ms", String(value))
+    .run();
+}
+
 function parseBookingBody(body: unknown): SeedBooking | null {
   if (!body || typeof body !== "object") return null;
   const booking = body as Partial<SeedBooking>;
@@ -1661,6 +1768,19 @@ export default {
     if (request.method === "POST" && url.pathname === "/admin/reset-seed") {
       const result = await reseedAll(env.BOOKINGS_DB);
       return json({ ok: true, deleted: result.deleted, inserted: result.inserted });
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/publish-signal") {
+      if (!isUiAuthed(request)) return json({ ok: false, error: "Unauthorized" }, 401);
+      const lastPublishedMs = await getPublishSignalMs(env.BOOKINGS_DB);
+      return json({ ok: true, lastPublishedMs });
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/publish-signal") {
+      if (!isUiAuthed(request)) return json({ ok: false, error: "Unauthorized" }, 401);
+      const lastPublishedMs = Date.now();
+      await setPublishSignalMs(env.BOOKINGS_DB, lastPublishedMs);
+      return json({ ok: true, lastPublishedMs });
     }
 
     if (request.method === "GET" && url.pathname === "/sync/rezdy/bookings") {

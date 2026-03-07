@@ -17,6 +17,9 @@ FlightOpsNXG is a Node/TypeScript monorepo for flight-ops workflows with:
     - `GET /v1/bookings`
     - `GET /v1/bookings/:orderNumber`
     - `POST /admin/seed`
+    - `POST /admin/reset-seed`
+    - `GET /admin/publish-signal`
+    - `POST /admin/publish-signal`
     - `POST /admin/bookings`
     - `PUT /admin/bookings/:orderNumber`
     - `DELETE /admin/bookings/:orderNumber`

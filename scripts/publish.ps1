@@ -30,6 +30,18 @@ if ($dirty) {
 }
 [Console]::Out.Flush()
 
+try {
+  $apiBase = if ($env:FLIGHTOPS_API_BASE) { $env:FLIGHTOPS_API_BASE.TrimEnd("/") } else { "https://api.flightops.co.nz" }
+  $password = if ($env:FLIGHTOPS_UI_PASSWORD) { $env:FLIGHTOPS_UI_PASSWORD } else { "pizza" }
+  $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
+  Invoke-WebRequest -Uri "$apiBase/auth?next=%2Fdashboard" -Method Post -WebSession $session -Body @{ password = $password } -UseBasicParsing | Out-Null
+  Invoke-RestMethod -Uri "$apiBase/admin/publish-signal" -Method Post -WebSession $session | Out-Null
+  Write-Host "Publish signal sent for browser completion sound."
+} catch {
+  Write-Host "Publish signal skipped: $($_.Exception.Message)"
+}
+
 $sound = "C:\Home\Jim\System\sounds\gotthis.wav"
 if (Test-Path $sound) {
   # Try delayed background playback first; fall back to local sync playback.

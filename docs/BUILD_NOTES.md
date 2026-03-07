@@ -1,6 +1,16 @@
 # Build Notes
 
 ## 2026-03-07
+### Browser Completion Sound Signal (Publish + Dashboard)
+- Added configuration-page `Test Browser Sound` button to validate browser-audible completion tone.
+- Added dashboard publish-signal polling (`/admin/publish-signal`) and browser tone playback on new signal detection.
+- Added authenticated worker endpoints for publish signal state:
+  - `GET /admin/publish-signal`
+  - `POST /admin/publish-signal`
+- Added D1-backed app-events persistence (`app_events` table created on demand) for `last_publish_ms`.
+- Updated `scripts/publish.ps1` to authenticate and post publish-signal after deploy so open dashboards can ping in-browser on publish completion.
+- Added helper script `scripts/play-sound.ps1` and local `sounds/gotthis.wav` asset for local/manual sound testing.
+
 ### Dashboard Range Modal + Configuration Move
 - Moved dashboard `Use Zulu / UTC` setting and seed reset action from `/dashboard` to `/configuration`.
 - Added persisted dashboard time-mode toggle on `/configuration` using local storage key `flightops_dashboard_use_zulu`.
